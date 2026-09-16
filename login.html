@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Colmena Segura 🐝🚨 | Portal de Seguridad Ciudadana & Acceso Comunitario</title>
+  <meta name="description" content="Portal oficial de Colmena Segura. Red descentralizada de alertas comunitarias en enjambre, mapa de calor y rutas seguras estilo Waze.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐝</text></svg>">
+  
+  <!-- Modern Typography from Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+  <!-- Dedicated Login Styles -->
+  <link rel="stylesheet" href="css/login.css">
+</head>
+<body class="login-landing-body">
+
+  <!-- Floating Background Ambient Light Effects -->
+  <div class="ambient-glow-circle glow-top-left" aria-hidden="true"></div>
+  <div class="ambient-glow-circle glow-bottom-right" aria-hidden="true"></div>
+  <div class="ambient-glow-circle glow-center" aria-hidden="true"></div>
+
+  <!-- Navigation Bar -->
+  <header class="landing-header">
+    <div class="landing-header-container">
+      <a href="login.html" class="landing-brand">
+        <div class="brand-hexagon-logo">
+          <span>🐝</span>
+        </div>
+        <div class="brand-titles">
+          <span class="brand-main-name">COLMENA SEGURA</span>
+          <span class="brand-badge-tag">RED CIUDADANA 2.0</span>
+        </div>
+      </a>
+
+      <nav class="landing-nav-links">
+        <a href="#features" class="nav-link-item">⚡ Beneficios</a>
+        <a href="#how-it-works" class="nav-link-item">🗺️ Cómo Funciona</a>
+        <a href="#security" class="nav-link-item">🔒 Seguridad</a>
+        <a href="admin.html" target="_blank" class="nav-link-item nav-link-c2">🛡️ Despacho Central</a>
+      </nav>
+
+      <div class="landing-header-cta">
+        <a href="index.html" class="btn-direct-app-enter" id="btn-quick-app-guest">
+          <span>📱 Ir a la App</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Hero Section -->
+  <main class="landing-main">
+    <section class="hero-section">
+      <div class="hero-container">
+        
+        <!-- Left Hero Content -->
+        <div class="hero-content">
+          <div class="hero-pill-badge">
+            <span class="spark-dot"></span>
+            <span>Tecnología de Enjambre • 100% Gratuita & Libre</span>
+          </div>
+
+          <h1 class="hero-headline">
+            La Red Inteligente de <span class="gradient-text">Protección Ciudadana</span> en Tiempo Real
+          </h1>
+
+          <p class="hero-description">
+            Conecta tu dispositivo a la colmena vecinal. Reporta incidentes con consenso geolocalizado a 50 metros, esquiva zonas de peligro con rutas inteligentes y coordina con tu cuadrante policial.
+          </p>
+
+          <!-- Key Trust Bullets -->
+          <div class="hero-key-points">
+            <div class="point-item">
+              <span class="point-icon">⚡</span>
+              <span>Respuesta &lt; 100ms</span>
+            </div>
+            <div class="point-item">
+              <span class="point-icon">📍</span>
+              <span>Geofence 50m</span>
+            </div>
+            <div class="point-item">
+              <span class="point-icon">🔒</span>
+              <span>Cifrado Total</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Modern Cyber-Glassmorphism Login Portal Box -->
+        <div class="hero-auth-card" id="auth-portal-card">
+          <div class="auth-card-header">
+            <div class="auth-icon-wrap">
+              <span>🔐</span>
+            </div>
+            <h3>Iniciar Sesión en la Colmena</h3>
+            <p>Accede con tu cuenta verificada de Google o tu correo personal</p>
+          </div>
+
+          <div class="auth-card-body">
+            <!-- Google Sign In Button -->
+            <button class="btn-google-sign-in" id="btn-login-google-landing">
+              <svg class="google-svg" viewBox="0 0 24 24" width="22" height="22">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+              <span>Continuar con Google</span>
+            </button>
+
+            <div class="auth-separator">
+              <span>o acceso rápido con correo</span>
+            </div>
+
+            <!-- Email Direct Form -->
+            <form class="landing-email-form" id="landing-email-form" onsubmit="return false;">
+              <div class="form-field-group">
+                <label for="landing-email-input">Correo Electrónico</label>
+                <div class="input-container">
+                  <span class="field-icon">📧</span>
+                  <input type="email" id="landing-email-input" class="tactical-landing-input" placeholder="tu_correo@gmail.com" required>
+                </div>
+              </div>
+
+              <button type="submit" class="btn-landing-email-submit" id="btn-landing-email-enter">
+                <span>Ingresar a la Plataforma</span> ➔
+              </button>
+            </form>
+
+            <!-- Guest Explorer Button -->
+            <div class="auth-guest-wrapper">
+              <a href="index.html" class="btn-landing-guest" id="btn-landing-guest-enter">
+                <span>👁️ Explorar como Ciudadano Invitado (Modo Libre)</span>
+              </a>
+            </div>
+
+            <div class="auth-disclaimer">
+              <span>🔒 Cero venta de datos • Identidad comunitaria protegida</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 4 Pillars Value Propositions -->
+    <section class="features-section" id="features">
+      <div class="section-header-center">
+        <span class="section-tag">TECNOLOGÍA DE VANGUARDIA</span>
+        <h2>¿Por qué Colmena Segura es diferente?</h2>
+        <p>Unimos inteligencia artificial comunitaria, algoritmos de enjambre y mapas en tiempo real.</p>
+      </div>
+
+      <div class="features-cards-grid">
+        <!-- Card 1 -->
+        <div class="landing-feature-card">
+          <div class="card-icon-bubble bubble-red">
+            <span>🚨</span>
+          </div>
+          <h3>Consenso en Enjambre</h3>
+          <p>
+            Elimina falsas alarmas. Cuando una alerta se emite, el motor de proximidad analiza reportes dentro de un radio estricto de <strong>50 metros</strong> para confirmar la emergencia con 2+ testigos.
+          </p>
+          <span class="card-footer-pill">Geofence Calibrado 50m</span>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="landing-feature-card">
+          <div class="card-icon-bubble bubble-cyan">
+            <span>🛡️</span>
+          </div>
+          <h3>Rutas Seguras Waze-like</h3>
+          <p>
+            El motor de navegación multi-corredor calcula desvíos seguros a pie o en vehículo garantizando un <strong>despeje mayor a 75m</strong> de cualquier zona activa de peligro.
+          </p>
+          <span class="card-footer-pill">Peatonal y Vehicular</span>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="landing-feature-card">
+          <div class="card-icon-bubble bubble-green">
+            <span>🤝</span>
+          </div>
+          <h3>Testigos & Reputación</h3>
+          <p>
+            Sistema dinámico de puntos de confianza. Gana reputación comunitaria (<strong>+10 pts</strong> por alertas confirmadas, <strong>+5 pts</strong> como testigo) construyendo una red de ciudadanos verificados.
+          </p>
+          <span class="card-footer-pill">Puntaje Dinámico 0-100</span>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="landing-feature-card">
+          <div class="card-icon-bubble bubble-purple">
+            <span>🚔</span>
+          </div>
+          <h3>Enlace con Despacho C2</h3>
+          <p>
+            Integración directa con centros de despacho policial y cuadrantes. Las alertas críticas transmiten telemetría instantánea y permiten emisión de sirenas comunitarias metropolitanas.
+          </p>
+          <span class="card-footer-pill">Central de Mando C2</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section class="how-it-works-section" id="how-it-works">
+      <div class="section-header-center">
+        <span class="section-tag">PASO A PASO</span>
+        <h2>Tres simples pasos para estar protegido</h2>
+      </div>
+
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-number">01</div>
+          <h4>Inicia Sesión</h4>
+          <p>Ingresa con tu correo de Google en 2 segundos para validar tu identidad comunitaria.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">02</div>
+          <h4>Monitorea el Radar</h4>
+          <p>Observa el mapa de calor con incidentes en vivo a tu alrededor y recibe advertencias de proximidad.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">03</div>
+          <h4>Navega con Rutas Seguras</h4>
+          <p>Escribe tu destino a pie o en auto y viaja por corredores seguros que esquivan el peligro.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-banner-section" id="security">
+      <div class="cta-card">
+        <h2>¿Listo para proteger a tu comunidad?</h2>
+        <p>Únete hoy a los ciudadanos que ya están usando la tecnología de Colmena Segura.</p>
+        <div class="cta-buttons-row">
+          <a href="index.html" class="btn-cta-launch">
+            <span>🚀 Abrir Colmena Segura</span>
+          </a>
+          <a href="admin.html" target="_blank" class="btn-cta-admin">
+            <span>🛡️ Ver Central de Despacho</span>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="landing-footer">
+    <div class="landing-footer-container">
+      <div class="footer-left">
+        <span class="footer-logo">🐝 COLMENA SEGURA</span>
+        <p>Sistema descentralizado de seguridad y alertas ciudadanas en enjambre.</p>
+      </div>
+      <div class="footer-links">
+        <a href="index.html">📱 App Ciudadana</a>
+        <a href="admin.html" target="_blank">🛡️ Despacho Central</a>
+        <a href="login.html">🔐 Iniciar Sesión</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>© 2026 Colmena Segura. Todos los derechos reservados. Proyecto de código abierto para protección vecinal.</p>
+    </div>
+  </footer>
+
+  <!-- Google Firebase SDK (Plan Spark 100% Free) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/firebaseAuth.js"></script>
+
+  <!-- Dedicated Login Script -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const btnGoogle = document.getElementById('btn-login-google-landing');
+      const formEmail = document.getElementById('landing-email-form');
+      const inputEmail = document.getElementById('landing-email-input');
+      const btnEmailSubmit = document.getElementById('btn-landing-email-enter');
+
+      const performEmailLogin = () => {
+        const email = inputEmail ? inputEmail.value.trim() : '';
+        if (email && email.includes('@')) {
+          if (window.firebaseAuth) {
+            window.firebaseAuth.loginWithEmail(email);
+          }
+          window.location.href = 'index.html';
+        } else {
+          alert('Por favor ingresa un correo electrónico válido (ejemplo: vecino@gmail.com)');
+        }
+      };
+
+      // Google Sign-In Click
+      btnGoogle?.addEventListener('click', async () => {
+        if (window.firebaseAuth) {
+          try {
+            const user = await window.firebaseAuth.loginWithGoogle();
+            if (user) {
+              window.location.href = 'index.html';
+            }
+          } catch (e) {
+            alert('No se pudo completar el inicio de sesión con Google.');
+          }
+        } else {
+          window.location.href = 'index.html';
+        }
+      });
+
+      // Email Form Submit
+      formEmail?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        performEmailLogin();
+      });
+
+      btnEmailSubmit?.addEventListener('click', (e) => {
+        e.preventDefault();
+        performEmailLogin();
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Colmena Segura 🐝🚨 | Alertas Comunitarias en Enjambre y Mapa de Riesgo</title>
+  <meta name="description" content="Sistema inteligente de detección comunitaria de incidentes por consenso en colmena, mapa de calor y rutas seguras estilo Waze.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐝</text></svg>">
+  
+  <!-- Leaflet CSS & Heatmap Library -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
+
+  <!-- Application Styles -->
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="manifest" href="manifest.json">
+</head>
+<body class="citizen-body">
+
+  <!-- Main Citizen App Root -->
+  <div class="app-viewport" id="citizen-app-root">
+
+    <!-- Top Universal Header -->
+    <header class="app-header">
+      <div class="brand-wrapper">
+        <span class="brand-icon-hive" aria-hidden="true">🐝</span>
+        <div class="brand-text-block">
+          <h1 class="brand-title">COLMENA SEGURA</h1>
+          <span class="brand-subtitle-desktop">RED CIUDADANA DE SEGURIDAD ENJAMBRE</span>
+        </div>
+      </div>
+
+      <!-- Desktop Navigation Tabs (Visible on Computer Screens) -->
+      <nav class="desktop-nav-tabs" aria-label="Navegación de escritorio">
+        <button class="desktop-tab-btn active" data-tab="map" id="d-nav-map">
+          <span>🗺️</span> Mapa y Radar
+        </button>
+        <button class="desktop-tab-btn" data-tab="report" id="d-nav-report">
+          <span>🚨</span> Reportar Alerta SOS
+        </button>
+        <button class="desktop-tab-btn" data-tab="routes" id="d-nav-routes">
+          <span>🛡️</span> Navegación y Rutas
+        </button>
+        <button class="desktop-tab-btn" data-tab="profile" id="d-nav-profile">
+          <span>🐝</span> Colmena & Reputación
+        </button>
+      </nav>
+
+      <div class="header-actions">
+        <!-- Live GPS Status Pill -->
+        <span class="gps-pill gps-active" id="gps-status-pill">🟢 GPS<span class="gps-coords-text"> Real</span></span>
+
+        <!-- Google User Auth Pill in Top Bar -->
+        <div class="user-auth-header-container" id="user-auth-header-slot">
+          <a href="login.html" class="btn-auth-google-header" id="btn-login-google-header" title="Iniciar sesión con cuenta de Google">
+            <span class="g-icon">🔐</span><span class="auth-btn-text"> Iniciar con Google</span>
+          </a>
+        </div>
+
+        <a href="admin.html" target="_blank" class="btn-header-link" id="link-admin-panel" title="Abrir Centro de Despacho">
+          <span>🛡️</span><span class="btn-label-desktop"> Despacho Central</span><span class="btn-label-mobile"> C2</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- Geofence Proximity Threat Banner (Dynamic) -->
+    <aside class="geofence-banner hidden" id="geofence-warning-banner" role="alert" aria-live="assertive">
+      <!-- Injected via bundle.js -->
+    </aside>
+
+    <!-- Main Workspace (Desktop Split View: Left Controls / Right Map) -->
+    <main class="app-main-workspace">
+
+      <!-- Left Sidebar / Tab Panels -->
+      <aside class="app-sidebar-panels">
+
+        <!-- ====================================================================
+             TAB 1: RESUMEN DE RADAR / MONITOR DE CUADRANTE
+             ==================================================================== -->
+        <section class="tab-panel active" id="tab-map" aria-label="Mapa de Riesgo y Radar">
+          <div class="desktop-radar-summary">
+            <div class="radar-summary-hero">
+              <span class="pulse-radar-dot"></span>
+              <div>
+                <h3>Radar de Cuadrante Activo</h3>
+                <p>Monitoreo inteligente enjambre en tiempo real para tu zona geográfica.</p>
+              </div>
+            </div>
+
+            <!-- Quick SOS Trigger Card for Desktop -->
+            <div class="desktop-quick-sos-card">
+              <h4>🚨 Disparo Rápido de Emergencia</h4>
+              <p>Presiona para activar la colmena en tus coordenadas actuales:</p>
+              <button class="btn-quick-sos" id="btn-quick-panic-desktop">
+                <span>🚨 DISPARAR ALERTA SOS INMEDIATA</span>
+              </button>
+            </div>
+
+            <!-- Live Threat Stats in Neighborhood -->
+            <div class="quadrant-stats-grid">
+              <div class="q-stat-card">
+                <span class="q-stat-label">Estado de Red</span>
+                <span class="q-stat-val val-safe">🟢 Conectado</span>
+              </div>
+              <div class="q-stat-card">
+                <span class="q-stat-label">Tu Reputación</span>
+                <span class="q-stat-val" id="quick-trust-stat" style="color:var(--color-safe);">100/100</span>
+              </div>
+            </div>
+
+            <div class="desktop-feed-wrapper">
+              <h4 class="feed-section-header">Actividad Reciente en tu Cuadrante</h4>
+              <div class="recent-incidents-feed" id="desktop-incidents-list">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ====================================================================
+             TAB 2: BOTÓN DE PÁNICO Y REPORTE SOS
+             ==================================================================== -->
+        <section class="tab-panel" id="tab-report" aria-label="Reporte de Emergencia SOS">
+          
+          <div class="sos-instruction-header">
+            <h2>Alerta Comunitaria</h2>
+            <p>Presiona el botón para alertar al enjambre. Si otro ciudadano cercano coincide, se activará la alerta roja oficial.</p>
+          </div>
+
+          <!-- Interactive SOS Panic Button -->
+          <div class="panic-button-wrapper">
+            <div class="panic-radar-ring" aria-hidden="true"></div>
+            <div class="panic-pulse-glow" aria-hidden="true"></div>
+            <button class="mega-panic-btn" id="main-panic-btn" aria-label="Botón de Pánico Emergencia">
+              <span class="panic-btn-icon">🚨</span>
+              <span class="panic-btn-text">ALERTA SOS</span>
+              <span class="panic-btn-sub">1 TOQUE DISPARA</span>
+            </button>
+          </div>
+
+          <!-- Category Selector -->
+          <div class="category-selector-tray">
+            <span class="tray-label">Tipo de Incidente (Selección rápida)</span>
+            <div class="category-chips-grid">
+              <button class="category-chip active" data-category="FIGHT">
+                <span>⚔️</span> Riña / Pelea
+              </button>
+              <button class="category-chip" data-category="ROBBERY">
+                <span>🚨</span> Robo / Asalto
+              </button>
+              <button class="category-chip" data-category="MEDICAL">
+                <span>🚑</span> Emergencia Médica
+              </button>
+              <button class="category-chip" data-category="SUSPICIOUS">
+                <span>👁️</span> Sospechoso
+              </button>
+            </div>
+
+            <div class="optional-note-box">
+              <input type="text" id="report-note-input" class="tactical-input" placeholder="Nota o detalle rápido (opcional)..." maxlength="120">
+            </div>
+          </div>
+
+        </section>
+
+        <!-- ====================================================================
+             TAB 3: NAVEGACIÓN REAL INTELIGENTE (ORIGEN/DESTINO INTERACTIVO)
+             ==================================================================== -->
+        <section class="tab-panel" id="tab-routes" aria-label="Navegador de Rutas Seguras">
+          
+          <div class="routing-header">
+            <h3>🧭 Navegación Segura por Calles</h3>
+            <p>Elige tu punto de partida y destino en el mapa o búscalo por dirección para calcular la mejor ruta esquivando zonas de peligro.</p>
+          </div>
+
+          <!-- Address Search Box -->
+          <div class="route-search-wrapper">
+            <label class="tray-label" for="route-search-input">🔍 Buscar Dirección o Lugar</label>
+            <div class="search-input-group">
+              <input type="text" id="route-search-input" class="tactical-input" placeholder="Escribe un lugar o dirección (ej. Calle 72, Parque Central)...">
+              <button class="btn-search-go" id="btn-search-address" title="Buscar">Buscar</button>
+            </div>
+            <div class="search-results-dropdown hidden" id="search-results-dropdown">
+              <!-- Search results injected here -->
+            </div>
+          </div>
+
+          <!-- Route Pin Placement Selector Controls -->
+          <div class="route-pin-selector-bar">
+            <button class="pin-mode-btn active" id="btn-mode-dest" data-mode="dest">
+              🏁 Tocar Mapa para Destino
+            </button>
+            <button class="pin-mode-btn" id="btn-mode-orig" data-mode="orig">
+              📍 Mover Mi Origen
+            </button>
+            <button class="pin-mode-btn btn-gps-reset" id="btn-reset-gps-orig" title="Restablecer Origen a mi GPS actual">
+              🎯 Mi GPS
+            </button>
+          </div>
+
+          <div class="route-form-card">
+            <div class="form-group-route">
+              <label for="route-orig-input">📍 Punto de Origen (Verde en el mapa)</label>
+              <input type="text" id="route-orig-input" class="tactical-input" value="📍 Obteniendo ubicación GPS..." readonly>
+            </div>
+
+            <div class="form-group-route">
+              <label for="route-dest-input">🏁 Punto de Destino (Rojo en el mapa)</label>
+              <input type="text" id="route-dest-input" class="tactical-input" value="🏁 Haz clic en cualquier calle del mapa para elegir" readonly>
+            </div>
+
+            <!-- Travel Mode Selector (A pie vs En vehículo) -->
+            <div class="travel-mode-selector-bar" role="group" aria-label="Modo de transporte">
+              <span class="mode-label">Modo de viaje:</span>
+              <div class="mode-buttons-group">
+                <button type="button" class="travel-mode-btn active" id="btn-mode-walking" data-travel="walking">
+                  <span>🚶</span> A pie
+                </button>
+                <button type="button" class="travel-mode-btn" id="btn-mode-driving" data-travel="driving">
+                  <span>🚗</span> En vehículo
+                </button>
+              </div>
+            </div>
+
+            <div class="route-buttons-row">
+              <button class="btn-primary-route" id="btn-calc-route">
+                🛡️ Calcular Ruta Segura
+              </button>
+              <button class="btn-secondary-route" id="btn-clear-route">
+                Limpiar
+              </button>
+            </div>
+          </div>
+
+          <!-- Calculation Result Card -->
+          <div class="route-results-card hidden" id="route-results-card">
+            <div id="route-results-header"></div>
+            <div id="route-results-text"></div>
+            <div class="route-steps-container hidden" id="route-steps-container">
+              <h5 style="margin-top: 10px; font-size: 0.78rem; color: var(--text-dim);">📋 Indicaciones Paso a Paso:</h5>
+              <ol class="route-step-list" id="route-steps-list"></ol>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- ====================================================================
+             TAB 4: COLMENA & SISTEMA DE REPUTACIÓN DINÁMICO
+             ==================================================================== -->
+        <section class="tab-panel" id="tab-profile" aria-label="Perfil y Red Comunitaria">
+
+          <!-- Google Verified Citizen Identity Card -->
+          <div class="google-user-profile-card" id="user-profile-identity-card">
+            <div class="user-avatar-wrapper">
+              <img src="https://api.dicebear.com/7.x/bottts/svg?seed=guest" alt="Avatar" id="profile-user-avatar" class="user-avatar-img">
+              <span class="user-status-online-dot"></span>
+            </div>
+            <div class="user-identity-details">
+              <div class="user-name-row">
+                <h3 id="profile-user-name">Invitado / Anónimo</h3>
+                <span class="badge-verified-email" id="profile-email-badge">🟡 Cuenta Local</span>
+              </div>
+              <p class="user-email-text" id="profile-user-email">Sin cuenta de Google vinculada</p>
+              <div class="user-auth-actions-row">
+                <a href="login.html" class="btn-auth-google btn-sm" id="btn-login-google-profile" style="text-decoration:none;">
+                  <span>🔐</span> Iniciar con Google
+                </a>
+                <button class="btn-auth-logout btn-sm hidden" id="btn-logout-profile">
+                  <span>🚪</span> Cerrar Sesión
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Interactive Trust Gauge Card -->
+          <div class="trust-gauge-card">
+            <div class="trust-circle-badge" id="trust-badge-circle" style="border-color: var(--color-safe);">
+              <span id="trust-score-num">100</span>
+              <small>/100</small>
+            </div>
+            <div class="trust-info">
+              <h4 id="trust-score-level">🟢 Guardián Verificado</h4>
+              <div class="trust-stats-row">
+                <span class="trust-pill-tag" id="trust-verified-count">✅ 0 alertas validadas</span>
+                <span class="trust-pill-tag" id="trust-validation-votes">🤝 0 aportes como testigo</span>
+              </div>
+              <p style="font-size: 0.72rem; color: var(--text-dim); margin-top: 6px;">
+                Gana <strong>+10 pts</strong> por cada alerta confirmada por vecinos y <strong>+5 pts</strong> al validar reportes como testigo.
+              </p>
+            </div>
+          </div>
+
+          <!-- Reputation History Log -->
+          <div class="reputation-history-box">
+            <h4 class="feed-section-header">Historial de Confianza Comunitario</h4>
+            <div class="reputation-events-list" id="reputation-events-list">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <!-- Recent Incidents Feed with Validation Actions -->
+          <div class="interactive-feed-box">
+            <h4 class="feed-section-header">Validar Incidentes en tu Cuadrante</h4>
+            <div class="recent-incidents-feed" id="recent-incidents-list">
+              <!-- Populated by bundle.js -->
+            </div>
+          </div>
+
+          <!-- Simulation Box for Easy Testing -->
+          <div class="simulation-box-card">
+            <h4 style="font-size: 0.85rem; color: var(--color-accent);">🧪 Inyector de Pruebas de Enjambre & Reputación</h4>
+            <p style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">
+              Prueba cómo sube o baja tu reputación con eventos simulados:
+            </p>
+            <div class="sim-btn-grid">
+              <button class="btn-sim" id="btn-sim-fight">⚔️ Simular Riña (+10 pts)</button>
+              <button class="btn-sim" id="btn-sim-robbery">🚨 Simular Asalto (+10 pts)</button>
+              <button class="btn-sim" id="btn-sim-false">🟡 Reporte Aislado</button>
+              <button class="btn-sim" id="btn-sim-reset" style="color: var(--color-critical);">🧹 Resetear Todo</button>
+            </div>
+          </div>
+
+        </section>
+
+      </aside>
+
+      <!-- Right Tactical Map Canvas (Always Visible on PC / Expanded on Mobile) -->
+      <section class="app-map-canvas-pane" id="app-map-pane" aria-label="Mapa Táctico">
+        
+        <!-- Floating Time Filters & GPS Recenter -->
+        <div class="map-floating-controls">
+          <div class="time-filter-pill-group" role="group" aria-label="Filtro de riesgo por horario">
+            <button class="time-filter-btn active" data-time="ALL" id="filter-time-all">🔥 Todo</button>
+            <button class="time-filter-btn" data-time="DAY" id="filter-time-day">☀️ Día</button>
+            <button class="time-filter-btn" data-time="NIGHT" id="filter-time-night">🌙 Noche</button>
+          </div>
+          <button class="btn-recenter-float" id="btn-recenter-gps" title="Centrar en mi ubicación GPS">
+            🎯 Mi Ubicación
+          </button>
+        </div>
+
+        <!-- Leaflet Map Container -->
+        <div id="citizen-map"></div>
+
+        <!-- Legend Pill -->
+        <div class="map-legend-pill">
+          <div class="legend-item"><span class="dot-legend dot-crit"></span> Crítico (Enjambre)</div>
+          <div class="legend-item"><span class="dot-legend dot-warn"></span> Sondeo (1 alerta)</div>
+          <div class="legend-item"><span class="dot-legend dot-safe"></span> Zona Segura</div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Bottom Navigation Bar (Visible on Mobile / Hidden on Desktop) -->
+    <nav class="bottom-nav-bar" aria-label="Navegación principal">
+      <button class="nav-tab-item active" data-tab="map" id="nav-btn-map">
+        <span class="nav-icon">🗺️</span>
+        <span>Mapa</span>
+      </button>
+
+      <button class="nav-tab-item nav-sos" data-tab="report" id="nav-btn-report">
+        <span class="nav-icon">🚨</span>
+        <span>Reportar SOS</span>
+      </button>
+
+      <button class="nav-tab-item" data-tab="routes" id="nav-btn-routes">
+        <span class="nav-icon">🛡️</span>
+        <span>Rutas</span>
+      </button>
+
+      <button class="nav-tab-item" data-tab="profile" id="nav-btn-profile">
+        <span class="nav-icon">🐝</span>
+        <span>Colmena</span>
+      </button>
+    </nav>
+
+    <!-- 3-Second Abort Countdown Overlay -->
+    <div class="panic-countdown-overlay hidden" id="panic-countdown-overlay">
+      <div class="countdown-circle" id="countdown-number">3</div>
+      <p style="font-size: 1.1rem; font-weight: 700; color: #fff;">ENVIANDO ALERTA A LA COLMENA...</p>
+      <button class="btn-abort" id="panic-cancel-btn">CANCELAR (Fue un error)</button>
+    </div>
+
+    <!-- Official Community Broadcast Modal -->
+    <div class="broadcast-modal-backdrop hidden" id="broadcast-alert-modal" role="dialog" aria-modal="true">
+      <div class="broadcast-card-modal">
+        <span class="broadcast-icon-mega">📢</span>
+        <h3 id="broadcast-modal-title">ALERTA DE SEGURIDAD PÚBLICA</h3>
+        <p id="broadcast-modal-msg">Mensaje oficial de las autoridades para tu perímetro.</p>
+        <button class="btn-broadcast-ack" id="broadcast-modal-close">ENTENDIDO / ESTOY A SALVO</button>
+      </div>
+    </div>
+
+    <!-- Marketing Welcome & Login Hero Modal -->
+    <div class="marketing-login-backdrop hidden" id="marketing-login-modal" role="dialog" aria-modal="true">
+      <div class="marketing-login-card">
+        <button class="btn-close-marketing-modal" id="btn-close-marketing" aria-label="Cerrar ventana">✕</button>
+        
+        <div class="marketing-hero-header">
+          <div class="marketing-badge-glow">
+            <span class="mega-bee">🐝</span>
+          </div>
+          <h2>COLMENA SEGURA</h2>
+          <p class="marketing-tagline">Red Inteligente de Protección Ciudadana en Tiempo Real</p>
+          <span class="spark-free-badge">✨ 100% Gratuito y Libre para Comunidades</span>
+        </div>
+
+        <!-- Main Auth Action Container -->
+        <div class="marketing-auth-box">
+          <button class="btn-mega-google-login" id="btn-modal-google-signin">
+            <svg class="google-svg-icon" viewBox="0 0 24 24" width="20" height="20">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span>Continuar con Cuenta de Google</span>
+          </button>
+
+          <div class="auth-divider">
+            <span>o acceso rápido con correo</span>
+          </div>
+
+          <form class="quick-email-form" id="quick-email-login-form" onsubmit="return false;">
+            <div class="input-with-icon">
+              <span class="input-icon">📧</span>
+              <input type="email" id="modal-email-input" class="tactical-input" placeholder="ejemplo.vecino@gmail.com" required>
+            </div>
+            <button type="submit" class="btn-email-signin" id="btn-modal-email-submit">
+              Acceder con este Correo ➔
+            </button>
+          </form>
+
+          <button class="btn-guest-explore" id="btn-modal-guest-explore">
+            👁️ Explorar como Ciudadano Invitado (Modo Libre)
+          </button>
+        </div>
+
+        <!-- 4 Core Value Propositions -->
+        <div class="marketing-features-grid">
+          <div class="feature-item">
+            <span class="feature-icon">🚨</span>
+            <div class="feature-text">
+              <strong>Consenso en Enjambre</strong>
+              <small>Alertas confirmadas en radio estricto de 50 metros</small>
+            </div>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🛡️</span>
+            <div class="feature-text">
+              <strong>Rutas Seguras Inteligentes</strong>
+              <small>Desvíos que esquivan peligros a pie y en vehículo</small>
+            </div>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🤝</span>
+            <div class="feature-text">
+              <strong>Testigos & Reputación</strong>
+              <small>Gana confianza validando incidentes reales</small>
+            </div>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🚔</span>
+            <div class="feature-text">
+              <strong>Enlace con Despacho</strong>
+              <small>Conexión en tiempo real con cuadrantes y patrullas</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Trust & Security Metrics -->
+        <div class="marketing-footer-metrics">
+          <span>⚡ &lt; 100ms Latencia</span>
+          <span>📍 Geofence 50m</span>
+          <span>🔒 Cifrado & Privacidad</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notification Toast Container -->
+    <div id="toast-container" aria-live="polite"></div>
+
+  </div>
+
+  <!-- Google Firebase SDK (Plan Spark 100% Free) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/firebaseAuth.js"></script>
+
+  <!-- Universal Self-Contained Bundle -->
+  <script src="js/bundle.js"></script>
+</body>
+</html>

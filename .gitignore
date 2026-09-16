@@ -1,0 +1,21 @@
+# Sistema Operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editores y Entornos
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dependencias y Logs
+node_modules/
+*.log
+
+# Variables de entorno y secretos
+.env
+.env.local
+.env.*.local
+*.pem
+*.key

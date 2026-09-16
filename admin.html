@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Centro de Mando & Despacho Central 🛡️🚨 | Colmena Segura</title>
+  <meta name="description" content="Panel de Control Central de Autoridades y Despacho Táctico para incidentes comunitarios detectados en enjambre.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+
+  <!-- Leaflet & Heatmap CDN (cdnjs fallback) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
+
+  <!-- Admin & Design Styles -->
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body class="admin-body">
+
+  <!-- Top Tactical Command Header -->
+  <header class="admin-header">
+    <div class="admin-brand">
+      <div class="admin-logo-badge">
+        <span class="pulse-led"></span>
+        <span>C2 / CENTRO DE MANDO</span>
+      </div>
+      <div class="admin-title-group">
+        <h1>COLMENA SEGURA • DESPACHO CENTRAL</h1>
+        <span>MAPA TÁCTICO DE INCIDENTES ENJAMBRE EN TIEMPO REAL</span>
+      </div>
+    </div>
+
+    <!-- Live Telemetry Stats -->
+    <div class="admin-telemetry-bar" aria-label="Métricas en vivo">
+      <div class="telemetry-metric">
+        <span class="metric-label">Enjambre Crítico</span>
+        <span class="metric-val metric-crit" id="stat-critical">0</span>
+      </div>
+      <div class="telemetry-metric">
+        <span class="metric-label">Sondeo / Preventivo</span>
+        <span class="metric-val metric-warn" id="stat-probing">0</span>
+      </div>
+      <div class="telemetry-metric">
+        <span class="metric-label">En Despacho</span>
+        <span class="metric-val metric-info" id="stat-dispatched">0</span>
+      </div>
+      <div class="telemetry-metric">
+        <span class="metric-label">Unidades en Sector</span>
+        <span class="metric-val metric-safe" id="stat-active-units">12 Patrullas</span>
+      </div>
+    </div>
+
+    <!-- Header Actions -->
+    <div class="admin-header-actions">
+      <!-- Dashboard View Switcher -->
+      <div class="admin-view-switcher" role="group" aria-label="Cambiar vista">
+        <button class="tactical-btn active" id="btn-view-radar">🚨 Radar & Despacho</button>
+        <button class="tactical-btn" id="btn-view-users">👥 Directorio Usuarios</button>
+      </div>
+
+      <button class="tactical-btn" id="btn-toggle-sound">
+        🔊 Audio
+      </button>
+      <button class="tactical-btn btn-broadcast-open" id="btn-open-broadcast">
+        📢 Alerta
+      </button>
+      <a href="index.html" target="_blank" class="tactical-btn btn-citizen-app-link" title="Abrir App Ciudadana">
+        📱 App
+      </a>
+    </div>
+  </header>
+
+  <!-- Mobile Live Telemetry Strip -->
+  <div class="admin-mobile-telemetry" aria-label="Métricas tácticas móviles">
+    <span class="telemetry-mini-pill"><strong style="color:var(--color-critical);">🚨 <span id="stat-crit-m">0</span></strong> Críticos</span>
+    <span class="telemetry-mini-pill"><strong style="color:var(--color-warning);">🟡 <span id="stat-warn-m">0</span></strong> Sondeo</span>
+    <span class="telemetry-mini-pill"><strong style="color:var(--color-info);">🚑 <span id="stat-disp-m">0</span></strong> Despacho</span>
+    <span class="telemetry-mini-pill"><strong style="color:var(--color-safe);">🚓 <span id="stat-units-m">12</span></strong> Patrullas</span>
+  </div>
+
+  <!-- Category Filter Strip for Authorities -->
+  <nav class="admin-category-nav" id="admin-category-nav" aria-label="Filtros de tipo de alerta">
+    <span class="filter-nav-label">Filtrar:</span>
+    <button class="admin-filter-pill active" data-category="ALL">🔥 Todo</button>
+    <button class="admin-filter-pill" data-category="FIGHT">⚔️ Riñas</button>
+    <button class="admin-filter-pill" data-category="ROBBERY">🚨 Robos</button>
+    <button class="admin-filter-pill" data-category="MEDICAL">🚑 Médica</button>
+    <button class="admin-filter-pill" data-category="SUSPICIOUS">👁️ Sospechoso</button>
+  </nav>
+
+  <!-- Split Tactical Workspace -->
+  <main class="admin-workspace" id="admin-workspace-container">
+
+    <!-- VIEW 1: Radar & Dispatch Queue -->
+    <!-- Left: Priority Incident Queue -->
+    <section class="admin-queue-panel" id="admin-queue-panel">
+      <div class="queue-panel-header">
+        <h3>
+          <span>🚨</span> COLA DE INCIDENTES EN TIEMPO REAL
+        </h3>
+        <span style="font-size: 0.72rem; color: var(--color-safe); font-family: var(--font-mono);">● EN VIVO</span>
+      </div>
+
+      <div class="live-incident-feed" id="admin-incident-queue">
+        <!-- Injected dynamically by admin-bundle.js -->
+      </div>
+    </section>
+
+    <!-- Right: Tactical Map & Simulation Overlay -->
+    <section class="admin-map-panel" id="admin-map-panel">
+      <div id="admin-map"></div>
+
+      <!-- Bottom Floating Simulation Bar -->
+      <aside class="admin-sim-floating-bar" aria-label="Simulador de Enjambre">
+        <span class="sim-label">⚡ Inyector:</span>
+        <button class="sim-btn-pill" id="admin-sim-fight">⚔️ Riña (3 bots)</button>
+        <button class="sim-btn-pill" id="admin-sim-robbery">🚨 Asalto</button>
+        <button class="sim-btn-pill" id="admin-sim-reset" style="color: var(--color-critical);">🧹 Reset</button>
+      </aside>
+    </section>
+
+    <!-- VIEW 2: User Accounts & Citizen Directory Panel -->
+    <section class="admin-users-panel hidden" id="admin-users-panel">
+      <div class="users-panel-header">
+        <div class="users-header-info">
+          <h3>👥 DIRECTORIO CIUDADANO & GESTIÓN DE CUENTAS</h3>
+          <p>Control de correos de Google registrados, verificación de identidad y reputación comunitaria.</p>
+        </div>
+        <div class="users-search-box">
+          <input type="text" id="admin-users-search" class="tactical-input" placeholder="🔍 Buscar por correo o nombre...">
+        </div>
+      </div>
+
+      <div class="users-directory-grid" id="admin-users-grid">
+        <!-- Populated by admin-bundle.js -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Mobile View Toggle Floating Button (Visible only on < 768px screens) -->
+  <button class="admin-mobile-view-toggle" id="btn-admin-mobile-toggle" aria-label="Alternar vista mapa o lista">
+    📋 Ver Cola
+  </button>
+
+  <!-- Tactical Emergency Broadcast Modal -->
+  <div class="admin-modal-backdrop hidden" id="admin-broadcast-modal" role="dialog" aria-modal="true">
+    <div class="admin-modal-card">
+      <div class="modal-header">
+        <h3>📢 EMITIR ALERTA COMUNITARIA MASIVA</h3>
+        <p>Este mensaje se enviará con sirena de emergencia a todos los celulares en el radio metropolitano seleccionado.</p>
+      </div>
+
+      <div class="modal-body">
+        <div>
+          <label class="tray-label" for="broadcast-title-input">Título de la Alerta Oficial</label>
+          <input type="text" id="broadcast-title-input" class="tactical-input" value="AVISO DE SEGURIDAD PÚBLICA: EVITAR ZONA CENTRO">
+        </div>
+
+        <div>
+          <label class="tray-label" for="broadcast-message-input">Instrucciones a la Ciudadanía</label>
+          <textarea id="broadcast-message-input" class="tactical-input" rows="3" placeholder="Ejemplo: Se reporta incidente en progreso. Por favor busque rutas alternativas y permanezca en lugares seguros.">Operativo policial activo en el cuadrante. Por favor evite transitar por la intersección principal y use rutas alternas seguras.</textarea>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="tactical-btn" id="btn-close-broadcast">Cancelar</button>
+        <button class="tactical-btn btn-broadcast-open" id="btn-send-broadcast">🚀 Despachar Alerta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Google Firebase SDK (Plan Spark 100% Free) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/firebaseAuth.js"></script>
+
+  <!-- Universal Admin Bundle Script -->
+  <script src="js/admin-bundle.js"></script>
+</body>
+</html>

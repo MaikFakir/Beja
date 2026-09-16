@@ -1,0 +1,16 @@
+{
+  "name": "Colmena Segura - Alertas en Enjambre",
+  "short_name": "ColmenaSegura",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#070a12",
+  "theme_color": "#ff2a55",
+  "description": "Sistema comunitario de alertas de seguridad en enjambre, mapa de calor y rutas seguras estilo Waze.",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐝</text></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
