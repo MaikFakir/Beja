@@ -2449,9 +2449,11 @@
           if (titleEl) titleEl.textContent = 'Cuadrante Seguro';
           if (timeEl) timeEl.textContent = 'activo';
           if (subEl) subEl.textContent = 'Sin incidentes activos • 18 vecinos atentos';
-          if (badgeEl) badgeEl.innerHTML = '<span>98% Segura</span>';
+          if (badgeEl) badgeEl.innerHTML = '<span>🛡️ 98% Segura</span>';
           if (iconEl) iconEl.textContent = '🛡️';
           if (etaEl) etaEl.textContent = '8m';
+          const distBadge = document.getElementById('floating-dist-badge');
+          if (distBadge) distBadge.textContent = 'OPT';
           return;
         }
 
@@ -2468,23 +2470,28 @@
         if (nearest) {
           const cat = INCIDENT_CATEGORIES[nearest.category] || { name: 'Alerta SOS', icon: '🚨' };
           const distMeters = Math.round(minDist);
-          if (titleEl) titleEl.textContent = `Alerta cercana (${distMeters}m)`;
+          if (titleEl) titleEl.textContent = `Alerta Cercana`;
           if (timeEl) timeEl.textContent = 'hace 4m';
-          if (subEl) subEl.textContent = `${cat.name} • 18 vecinos atentos`;
-          if (iconEl) iconEl.textContent = cat.icon || '📍';
+          if (subEl) subEl.textContent = `${cat.name} • Cruce Libertadores con Dasso`;
+          if (iconEl) iconEl.textContent = cat.icon || '⚠️';
           if (etaEl) etaEl.textContent = `${Math.max(2, Math.round(distMeters / 60))}m`;
+
+          const distBadge = document.getElementById('floating-dist-badge');
+          if (distBadge) distBadge.textContent = `${distMeters}M`;
+          const neighborsText = document.getElementById('cluster-neighbors-text');
+          if (neighborsText) neighborsText.textContent = '18 vecinos atentos';
 
           if (badgeEl) {
             if (nearest.status === INCIDENT_STATES.CRITICAL_SWARM) {
               badgeEl.style.background = 'rgba(255, 51, 102, 0.15)';
               badgeEl.style.borderColor = 'rgba(255, 51, 102, 0.4)';
               badgeEl.style.color = '#ff3366';
-              badgeEl.innerHTML = '<span>Zona Roja</span>';
+              badgeEl.innerHTML = '<span>⚠️ Zona Roja</span>';
             } else {
-              badgeEl.style.background = 'rgba(255, 184, 0, 0.15)';
-              badgeEl.style.borderColor = 'rgba(255, 184, 0, 0.4)';
+              badgeEl.style.background = 'rgba(245, 158, 11, 0.15)';
+              badgeEl.style.borderColor = 'rgba(245, 158, 11, 0.4)';
               badgeEl.style.color = '#f59e0b';
-              badgeEl.innerHTML = '<span>Alerta Sondeo</span>';
+              badgeEl.innerHTML = '<span>🛡️ 98% Segura</span>';
             }
           }
         }
@@ -2496,6 +2503,7 @@
     setupTabs() {
       const mobileNavItems = document.querySelectorAll('.nav-tab-item');
       const desktopNavItems = document.querySelectorAll('.desktop-tab-btn');
+      const headerNavItems = document.querySelectorAll('.header-nav-link');
       const tabPanels = document.querySelectorAll('.tab-panel');
       const sidebarPanels = document.getElementById('app-sidebar-panels');
       const floatingCard = document.getElementById('floating-incident-card');
@@ -2546,6 +2554,11 @@
           else d.classList.remove('active');
         });
 
+        headerNavItems.forEach(h => {
+          if (h.dataset.tab === target) h.classList.add('active');
+          else h.classList.remove('active');
+        });
+
         tabPanels.forEach(p => p.classList.remove('active'));
 
         const panel = document.getElementById('tab-' + target);
@@ -2580,6 +2593,10 @@
         item.addEventListener('click', () => switchTab(item.dataset.tab));
       });
 
+      headerNavItems.forEach(item => {
+        item.addEventListener('click', () => switchTab(item.dataset.tab));
+      });
+
       // Drawer close button
       document.getElementById('btn-close-sidebar-drawer')?.addEventListener('click', () => {
         switchTab('map');
@@ -2607,6 +2624,12 @@
         }
       });
 
+      // Header notification bell button (Mockup)
+      document.getElementById('btn-header-bell')?.addEventListener('click', () => {
+        sounds.playClick();
+        this.showToast('🔔 Red comunitaria San Isidro calibrada. 32 nodos activos en el cuadrante.', 'info');
+      });
+
       // Floating incident card actions
       document.getElementById('btn-floating-view-route')?.addEventListener('click', () => {
         switchTab('routes');
@@ -2614,6 +2637,46 @@
       });
       document.getElementById('btn-floating-notify')?.addEventListener('click', () => {
         switchTab('report');
+      });
+
+      // Desktop Map Zoom & Navigation Controls
+      document.getElementById('btn-map-zoom-in')?.addEventListener('click', () => {
+        sounds.playClick();
+        if (this.riskMap && this.riskMap.map) {
+          this.riskMap.map.zoomIn();
+        }
+      });
+      document.getElementById('btn-map-zoom-out')?.addEventListener('click', () => {
+        sounds.playClick();
+        if (this.riskMap && this.riskMap.map) {
+          this.riskMap.map.zoomOut();
+        }
+      });
+      document.getElementById('btn-map-north')?.addEventListener('click', () => {
+        sounds.playClick();
+        if (this.riskMap && this.riskMap.map) {
+          this.riskMap.map.setView([this.userCoords.lat, this.userCoords.lng], this.riskMap.map.getZoom());
+          this.showToast('🧭 Orientación restablecida hacia el Norte.', 'info');
+        }
+      });
+
+      // Desktop Layer Toggles (Mockup: Capa de Calor / Puntos Seguros)
+      const btnToggleHeatmap = document.getElementById('btn-toggle-heatmap');
+      const btnToggleSafepoints = document.getElementById('btn-toggle-safepoints');
+      btnToggleHeatmap?.addEventListener('click', () => {
+        sounds.playClick();
+        btnToggleHeatmap.classList.toggle('active');
+        const isActive = btnToggleHeatmap.classList.contains('active');
+        if (this.riskMap) {
+          this.riskMap.setTimeFilter(isActive ? 'ALL' : 'NIGHT');
+        }
+        this.showToast(isActive ? '🔥 Capa de Calor activada' : '🔥 Capa de Calor pausada', 'info');
+      });
+      btnToggleSafepoints?.addEventListener('click', () => {
+        sounds.playClick();
+        btnToggleSafepoints.classList.toggle('active');
+        const isActive = btnToggleSafepoints.classList.contains('active');
+        this.showToast(isActive ? '🛡️ Puntos Seguros visibilizados' : '🛡️ Puntos Seguros ocultos', 'info');
       });
 
       // Floating Layer button
@@ -2653,6 +2716,23 @@
         if (this.riskMap) {
           this.riskMap.setUserLocation(this.userCoords.lat, this.userCoords.lng, true);
         }
+      });
+
+      // Institutional Footer Links (Desktop Mockup)
+      document.getElementById('link-protocols')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        sounds.playClick();
+        this.showToast('📋 Protocolos Comunitarios Beja SafeNet v2.4 activos.', 'info');
+      });
+      document.getElementById('link-help')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        sounds.playClick();
+        this.showToast('ℹ️ Centro de Ayuda: Enlace directo con Serenazgo San Isidro y patrullaje preventivo.', 'info');
+      });
+      document.getElementById('link-privacy')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        sounds.playClick();
+        this.showToast('🔒 Privacidad y Datos: Encriptación comunitaria y anonimización de geolocalización.', 'info');
       });
 
       this.updateFloatingIncidentCard();
@@ -2701,6 +2781,8 @@
 
       if (panicBtn) panicBtn.addEventListener('click', triggerPanic);
       if (desktopQuickPanic) desktopQuickPanic.addEventListener('click', triggerPanic);
+      const desktopSosFab = document.getElementById('btn-desktop-sos-fab');
+      if (desktopSosFab) desktopSosFab.addEventListener('click', triggerPanic);
 
       if (cancelBtn) {
         cancelBtn.addEventListener('click', () => {

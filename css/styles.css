@@ -210,7 +210,7 @@ html, body.citizen-body {
   filter: brightness(1.1);
 }
 
-/* Desktop Navigation Tabs (Hidden in favor of Unified Dock) */
+/* Desktop Navigation Tabs (Preserved for compatibility) */
 .desktop-nav-tabs {
   display: none !important;
 }
@@ -245,6 +245,109 @@ html, body.citizen-body {
   background: var(--color-critical);
   color: #fff;
   box-shadow: var(--shadow-neon-red);
+}
+
+/* Version Badge next to Beja Logo (Mockup: COLMENA v2.4) */
+.brand-version-badge {
+  display: none;
+  align-items: center;
+  padding: 3px 8px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 6px;
+  color: #f59e0b;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Wide Search Bar for Desktop (Mockup: Buscar destinos, barrios o direcciones seguras...) */
+.desktop-wide-search {
+  max-width: 540px !important;
+  height: 40px !important;
+}
+
+.desktop-wide-search .header-search-input {
+  font-size: 0.85rem !important;
+}
+
+/* Desktop Header Navigation Links (Mockup: Mapa, Alertas, Comunidad) */
+.desktop-header-nav {
+  display: none;
+  align-items: center;
+  gap: 28px;
+  margin: 0 16px;
+}
+
+.header-nav-link {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 6px 4px;
+  position: relative;
+  transition: all 0.2s ease;
+  font-family: var(--font-display);
+}
+
+.header-nav-link:hover {
+  color: #fff;
+}
+
+.header-nav-link.active {
+  color: #f59e0b;
+  font-weight: 800;
+}
+
+.header-nav-link.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #f59e0b;
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+}
+
+/* Notification Bell Button (Mockup) */
+.header-bell-btn {
+  display: none;
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e2e8f0;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.header-bell-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #f59e0b;
+  color: #f59e0b;
+  transform: scale(1.05);
+}
+
+.bell-alert-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff3366;
+  box-shadow: 0 0 8px #ff3366;
 }
 
 /* Header Right Actions */
@@ -484,7 +587,7 @@ html, body.citizen-body {
   .app-main-workspace {
     position: relative;
     width: 100%;
-    height: calc(100% - 60px);
+    height: calc(100% - 60px - 42px);
     display: block;
     overflow: hidden;
   }
@@ -501,7 +604,7 @@ html, body.citizen-body {
   .app-sidebar-panels {
     position: absolute;
     top: 14px;
-    bottom: 96px;
+    bottom: 48px;
     left: 18px;
     width: 440px;
     max-width: calc(100vw - 36px);
@@ -522,26 +625,55 @@ html, body.citizen-body {
     pointer-events: none;
   }
 
-  /* Desktop Floating Unified Dock Bar */
-  .bottom-nav-bar {
+  /* Desktop Header & Floating Elements Activation */
+  .brand-version-badge {
+    display: inline-flex !important;
+  }
+
+  .desktop-header-nav {
     display: flex !important;
-    position: absolute !important;
-    bottom: 18px !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
-    z-index: 50 !important;
-    border-radius: 9999px !important;
-    padding: 6px 24px !important;
-    background: rgba(11, 16, 29, 0.94) !important;
-    backdrop-filter: blur(24px) !important;
-    -webkit-backdrop-filter: blur(24px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.14) !important;
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7) !important;
-    min-width: 400px !important;
-    height: 64px !important;
-    justify-content: space-between !important;
-    align-items: center !important;
-    gap: 12px !important;
+  }
+
+  .header-bell-btn {
+    display: flex !important;
+  }
+
+  .floating-geo-pill {
+    display: flex !important;
+  }
+
+  #floating-desktop-metrics {
+    display: flex !important;
+  }
+
+  #desktop-map-controls {
+    display: flex !important;
+  }
+
+  #desktop-map-legend {
+    display: flex !important;
+  }
+
+  #desktop-direct-c2-block {
+    display: flex !important;
+  }
+
+  #app-desktop-footer {
+    display: flex !important;
+  }
+
+  /* Desktop Position for Floating Incident Card */
+  .floating-incident-card {
+    bottom: 24px !important;
+    left: 24px !important;
+    transform: none !important;
+    width: 390px !important;
+    max-width: 420px !important;
+  }
+
+  /* Hide Mobile Bottom Nav Bar on Desktop (Replaced by Top Nav & Bottom-Right SOS) */
+  .bottom-nav-bar {
+    display: none !important;
   }
 }
 
@@ -590,6 +722,18 @@ html, body.citizen-body {
     pointer-events: none !important;
   }
 
+  /* Hide Desktop-Exclusive Layout Elements on Mobile */
+  #app-desktop-footer,
+  #desktop-map-legend,
+  #desktop-direct-c2-block,
+  #floating-desktop-metrics,
+  #floating-geo-pill,
+  .desktop-header-nav,
+  .brand-version-badge,
+  .header-bell-btn {
+    display: none !important;
+  }
+
   .bottom-nav-bar {
     display: flex !important;
     position: absolute !important;
@@ -605,18 +749,41 @@ html, body.citizen-body {
     align-items: center !important;
     padding-bottom: env(safe-area-inset-bottom, 0px) !important;
   }
+
+  /* Mobile Position for Floating Incident Card */
+  .floating-incident-card {
+    bottom: 74px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: calc(100% - 24px) !important;
+    max-width: 440px !important;
+  }
+
+  /* Map Controls on Mobile */
+  #desktop-map-controls {
+    top: 66px !important;
+    right: 12px !important;
+    transform: none !important;
+  }
 }
 
 /* ==========================================================================
    FLOATING ELEMENTS OVER MAP (MOCKUP ACCURACY)
    ========================================================================== */
 
-/* Top-Left Floating Sector Pill */
-.floating-sector-badge {
+/* Top-Left Floating Sector Pill Container & Geo Coordinates */
+.floating-sector-badge-container {
   position: absolute;
   top: 16px;
   left: 16px;
   z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.floating-sector-badge {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -630,8 +797,8 @@ html, body.citizen-body {
   font-weight: 700;
   color: #e2e8f0;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-  pointer-events: auto;
   user-select: none;
+  width: fit-content;
 }
 
 .badge-pulse-dot {
@@ -658,7 +825,151 @@ html, body.citizen-body {
   font-weight: 600;
 }
 
-/* Top-Right Floating Map Action Buttons */
+.badge-nodes-count {
+  color: #94a3b8;
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.2px;
+}
+
+.floating-geo-pill {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  background: rgba(11, 16, 29, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-full);
+  padding: 4px 12px;
+  font-size: 0.68rem;
+  color: #94a3b8;
+  font-family: var(--font-mono);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  width: fit-content;
+  user-select: none;
+}
+
+.geo-calibrated-text {
+  color: #00f5a0;
+  font-weight: 700;
+}
+
+/* Top-Right Floating Metrics & Layers Bar (Mockup Desktop) */
+.floating-top-right-bar {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 25;
+  display: none;
+  align-items: center;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.floating-top-metric-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(11, 16, 29, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 245, 160, 0.35);
+  border-radius: var(--radius-full);
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  color: #e2e8f0;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  user-select: none;
+}
+
+.route-safety-score {
+  color: #00f5a0;
+  font-weight: 800;
+}
+
+.floating-top-layers-group {
+  display: flex;
+  align-items: center;
+  background: rgba(11, 16, 29, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-full);
+  padding: 3px 6px;
+  gap: 4px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.top-layer-pill-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  padding: 5px 12px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.top-layer-pill-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.top-layer-pill-btn.active {
+  background: rgba(245, 158, 11, 0.18);
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+/* Right-Edge Vertical Map Controls (Mockup: +, -, North, GPS, Layers) */
+.desktop-vertical-map-tools {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  transform: translateY(-50%);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(11, 16, 29, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 5px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+}
+
+.vert-tool-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.15rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.vert-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f59e0b;
+}
+
+.vert-tool-btn:active {
+  transform: scale(0.92);
+}
+
 .map-top-right-tools {
   position: absolute;
   top: 16px;
@@ -818,6 +1129,89 @@ html, body.citizen-body {
   white-space: nowrap;
 }
 
+/* Connected Neighbors & Sensors Cluster Row (Desktop Mockup) */
+.incident-cluster-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.avatar-cluster {
+  display: flex;
+  align-items: center;
+}
+
+.cluster-avatar-mini {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid #0b101d;
+  color: #fff;
+  font-size: 0.58rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -6px;
+}
+
+.cluster-avatar-mini:first-child {
+  margin-left: 0;
+}
+
+.cluster-more-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #334155;
+  border: 1.5px solid #0b101d;
+  color: #e2e8f0;
+  font-size: 0.58rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -6px;
+}
+
+.cluster-info-text {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.cluster-info-text strong {
+  font-size: 0.76rem;
+  color: #fff;
+  font-weight: 800;
+}
+
+.cluster-info-text span {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cluster-dist-tag {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.5px;
+}
+
 .incident-card-actions {
   display: flex;
   gap: 8px;
@@ -825,9 +1219,9 @@ html, body.citizen-body {
 
 .btn-incident-route {
   flex: 1 1 0;
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-  color: #070a12;
-  border: none;
+  background: linear-gradient(135deg, #b45309 0%, #92400e 100%);
+  color: #fff;
+  border: 1px solid rgba(245, 158, 11, 0.4);
   border-radius: 12px;
   font-weight: 800;
   font-size: 0.78rem;
@@ -865,6 +1259,179 @@ html, body.citizen-body {
 
 .btn-incident-notify:hover {
   background: rgba(255, 255, 255, 0.15);
+}
+
+/* Desktop Map Legend Bar (Bottom Center Mockup) */
+.desktop-map-legend-pill {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  background: rgba(11, 16, 29, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-full);
+  padding: 6px 18px;
+  display: none;
+  align-items: center;
+  gap: 18px;
+  font-size: 0.74rem;
+  color: #94a3b8;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.legend-dot-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot-verified {
+  background: #00f5a0;
+  box-shadow: 0 0 8px #00f5a0;
+}
+
+.dot-assigned {
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+}
+
+.dot-preventive {
+  background: #ff3366;
+  box-shadow: 0 0 8px #ff3366;
+}
+
+/* Desktop Direct Dispatch Enlace & SOS Button (Bottom Right Mockup) */
+.desktop-direct-c2-block {
+  position: absolute;
+  bottom: 18px;
+  right: 24px;
+  z-index: 25;
+  display: none;
+  align-items: center;
+  gap: 14px;
+  pointer-events: auto;
+}
+
+.direct-c2-text-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+}
+
+.direct-c2-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #64748b;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.direct-c2-target {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #e2e8f0;
+}
+
+.desktop-sos-big-btn {
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ff4d79, #d80032 75%);
+  border: 3px solid rgba(255, 255, 255, 0.35);
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 1.15rem;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  box-shadow: 0 8px 26px rgba(255, 51, 102, 0.55), 0 0 16px rgba(255, 51, 102, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), filter 0.2s ease, box-shadow 0.2s ease;
+}
+
+.desktop-sos-big-btn:hover {
+  transform: scale(1.08);
+  filter: brightness(1.15);
+  box-shadow: 0 12px 34px rgba(255, 51, 102, 0.75), 0 0 24px rgba(255, 51, 102, 0.5);
+}
+
+.desktop-sos-big-btn:active {
+  transform: scale(0.94);
+}
+
+/* Institutional Desktop Footer Bar */
+.app-desktop-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 42px;
+  z-index: 30;
+  background: rgba(7, 10, 18, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0 24px;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.footer-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.footer-squircle-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+}
+
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.footer-link {
+  color: #64748b;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.15s ease;
+}
+
+.footer-link:hover {
+  color: #e2e8f0;
+  text-decoration: underline;
+}
+
+.footer-sep {
+  color: #334155;
 }
 
 /* ==========================================================================

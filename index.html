@@ -35,37 +35,32 @@
           <h1 class="brand-beja-title">Beja</h1>
           <span class="brand-subtitle-desktop">COLMENA SEGURA</span>
         </div>
+        <span class="brand-version-badge">COLMENA v2.4</span>
       </div>
 
       <!-- Centered Interactive Search Bar (Camino a Casa / Buscar Destino) -->
       <div class="header-search-wrapper" id="header-search-wrapper">
-        <div class="header-search-box">
+        <div class="header-search-box desktop-wide-search">
           <span class="header-search-icon">🔍</span>
-          <input type="text" id="header-route-search-input" class="header-search-input" placeholder="Camino a Casa • Los S..." autocomplete="off">
+          <input type="text" id="header-route-search-input" class="header-search-input" placeholder="Buscar destinos, barrios o direcciones seguras..." autocomplete="off">
           <button type="button" class="header-search-btn" id="btn-header-search-go" title="Calcular ruta segura">➔</button>
         </div>
       </div>
 
-      <!-- Desktop Navigation Tabs (Preserved for compatibility) -->
-      <nav class="desktop-nav-tabs hidden" aria-label="Navegación de escritorio">
-        <button class="desktop-tab-btn active" data-tab="map" id="d-nav-map">
-          <span>🗺️</span> Mapa y Radar
-        </button>
-        <button class="desktop-tab-btn" data-tab="report" id="d-nav-report">
-          <span>🚨</span> Reportar Alerta SOS
-        </button>
-        <button class="desktop-tab-btn" data-tab="routes" id="d-nav-routes">
-          <span>🛡️</span> Navegación y Rutas
-        </button>
-        <button class="desktop-tab-btn" data-tab="profile" id="d-nav-profile">
-          <span>🐝</span> Colmena & Reputación
-        </button>
-        <button class="desktop-tab-btn" data-tab="chat" id="d-nav-chat">
-          <span>💬</span> Chat & Contactos
-        </button>
+      <!-- Desktop Header Navigation Links (Mockup: Mapa, Alertas, Comunidad) -->
+      <nav class="desktop-header-nav" aria-label="Navegación principal de escritorio">
+        <button type="button" class="header-nav-link active" data-tab="map" id="h-nav-map">Mapa</button>
+        <button type="button" class="header-nav-link" data-tab="report" id="h-nav-alerts">Alertas</button>
+        <button type="button" class="header-nav-link" data-tab="profile" id="h-nav-community">Comunidad</button>
       </nav>
 
       <div class="header-actions">
+        <!-- Notification Bell Icon (Mockup) -->
+        <button type="button" class="header-bell-btn" id="btn-header-bell" title="Avisos comunitarios y notificaciones">
+          <span class="bell-icon">🔔</span>
+          <span class="bell-alert-dot"></span>
+        </button>
+
         <!-- Live GPS Status Pill -->
         <span class="gps-pill gps-active" id="gps-status-pill">🟢 GPS<span class="gps-coords-text"> Real</span></span>
 
@@ -469,26 +464,44 @@
       <!-- Tactical Map Canvas (Centerpiece Full-Bleed Viewport) -->
       <section class="app-map-canvas-pane" id="app-map-pane" aria-label="Mapa Táctico Beja">
         
-        <!-- Top-Left Floating Sector & Hive Status Badge (Mockup) -->
-        <div class="floating-sector-badge" id="floating-colmena-badge" title="Estado de la Colmena en tu Cuadrante">
-          <span class="badge-pulse-dot"></span>
-          <span class="badge-sector-name" id="badge-sector-text">San Isidro</span>
-          <span class="badge-sep">•</span>
-          <span class="badge-status-text">Colmena Activa</span>
+        <!-- Top-Left Floating Sector & Hive Status Badge (Desktop + Mobile) -->
+        <div class="floating-sector-badge-container">
+          <div class="floating-sector-badge" id="floating-colmena-badge" title="Estado de la Colmena en tu Cuadrante">
+            <span class="badge-pulse-dot"></span>
+            <span class="badge-sector-name" id="badge-sector-text">San Isidro</span>
+            <span class="badge-sep">•</span>
+            <span class="badge-status-text">COLMENA ACTIVA</span>
+            <span class="badge-nodes-count" id="badge-nodes-count">((•)) 32 Nodos</span>
+          </div>
+          <div class="floating-geo-pill" id="floating-geo-pill">
+            <span id="geo-coords-text">S 12°05'58.2" • W 77°02'11.8"</span>
+            <span class="badge-sep">•</span>
+            <span class="geo-status-safe">MALLA COMUNITARIA CALIBRADA</span>
+          </div>
         </div>
 
-        <!-- Top-Right Floating Tactical Tools (Layer & GPS Crosshair) -->
-        <div class="map-top-right-tools">
-          <button type="button" class="map-tool-circle-btn" id="btn-floating-layers" title="Alternar Capas y Filtros">
-            <svg class="tool-svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="12 2 2 7 12 12 22 7 12 2"/>
-              <polyline points="2 17 12 22 22 17"/>
-              <polyline points="2 12 12 17 22 12"/>
+        <!-- Top-Right Floating Metrics & Map Layers (Desktop Mockup) -->
+        <div class="floating-top-right-bar" id="floating-desktop-metrics">
+          <div class="floating-top-metric-pill" id="floating-route-safety-pill">
+            <span class="metric-shield-icon">🛡️</span> RUTA <strong class="metric-score-bold" id="metric-score-text">98% Segura</strong>
+          </div>
+          <div class="floating-top-layers-group" role="group" aria-label="Capas del Mapa">
+            <button type="button" class="top-layer-pill-btn active" id="btn-toggle-heatmap">🔥 Capa de Calor</button>
+            <button type="button" class="top-layer-pill-btn" id="btn-toggle-safepoints">🛡️ Puntos Seguros</button>
+          </div>
+        </div>
+
+        <!-- Right Edge Vertical Map Controls (Desktop Zoom, Orientation & GPS) -->
+        <div class="desktop-vertical-map-tools" id="desktop-map-controls">
+          <button type="button" class="vert-tool-btn" id="btn-map-zoom-in" title="Acercar mapa">+</button>
+          <button type="button" class="vert-tool-btn" id="btn-map-zoom-out" title="Alejar mapa">−</button>
+          <button type="button" class="vert-tool-btn" id="btn-map-north" title="Orientar hacia el Norte">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 19 21 12 17 5 21 12 2" fill="rgba(245, 158, 11, 0.4)"/>
             </svg>
           </button>
-          
-          <button type="button" class="map-tool-circle-btn" id="btn-recenter-gps" title="Centrar en mi ubicación GPS">
-            <svg class="tool-svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+          <button type="button" class="vert-tool-btn" id="btn-recenter-gps" title="Centrar en mi ubicación GPS">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="7"/>
               <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
               <line x1="12" y1="1" x2="12" y2="4"/>
@@ -497,14 +510,21 @@
               <line x1="20" y1="12" x2="23" y2="12"/>
             </svg>
           </button>
+          <button type="button" class="vert-tool-btn" id="btn-floating-layers" title="Alternar Capas y Filtros">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+              <polyline points="2 17 12 22 22 17"/>
+              <polyline points="2 12 12 17 22 12"/>
+            </svg>
+          </button>
 
           <!-- Floating Layer / Time Filter Dropdown Menu -->
           <div class="floating-layer-menu hidden" id="floating-layer-menu">
             <span class="layer-menu-title">Filtro de Incidentes</span>
             <div class="layer-menu-buttons">
-              <button class="time-filter-btn active" data-time="ALL" id="filter-time-all">🔥 Todo</button>
-              <button class="time-filter-btn" data-time="DAY" id="filter-time-day">☀️ Día</button>
-              <button class="time-filter-btn" data-time="NIGHT" id="filter-time-night">🌙 Noche</button>
+              <button type="button" class="time-filter-btn active" data-time="ALL" id="filter-time-all">🔥 Todo</button>
+              <button type="button" class="time-filter-btn" data-time="DAY" id="filter-time-day">☀️ Día</button>
+              <button type="button" class="time-filter-btn" data-time="NIGHT" id="filter-time-night">🌙 Noche</button>
             </div>
           </div>
         </div>
@@ -512,43 +532,85 @@
         <!-- Leaflet Map Container -->
         <div id="citizen-map"></div>
 
-        <!-- Floating Bottom Incident / Smart Avoidance Card (Mockup) -->
+        <!-- Floating Bottom Incident / Smart Avoidance Card (Desktop & Mobile Mockup) -->
         <div class="floating-incident-card" id="floating-incident-card">
           <div class="incident-card-content">
             <div class="incident-card-icon-wrap">
-              <span class="incident-card-pin-icon" id="floating-incident-icon">📍</span>
+              <span class="incident-card-pin-icon" id="floating-incident-icon">⚠️</span>
             </div>
             <div class="incident-card-info">
               <div class="incident-title-row">
-                <strong class="incident-title" id="floating-incident-title">Alerta cercana (150m)</strong>
+                <strong class="incident-title" id="floating-incident-title">Alerta Cercana</strong>
                 <span class="incident-time-dot">•</span>
                 <span class="incident-time" id="floating-incident-time">hace 4m</span>
               </div>
-              <p class="incident-sub" id="floating-incident-subtitle">Luz intermitente • 18 vecinos atentos</p>
+              <p class="incident-sub" id="floating-incident-subtitle">Cruce Libertadores con Dasso</p>
             </div>
             <div class="incident-safety-badge" id="floating-incident-badge">
-              <span>98% Segura</span>
+              <span>🛡️ 98% Segura</span>
             </div>
           </div>
+
+          <!-- Connected Neighbors & Sensors Cluster Row (Desktop Mockup) -->
+          <div class="incident-cluster-row" id="incident-cluster-row">
+            <div class="avatar-cluster">
+              <div class="cluster-avatar-mini" style="background:#2563eb;">JD</div>
+              <div class="cluster-avatar-mini" style="background:#7c3aed;">MC</div>
+              <span class="cluster-more-badge">+17</span>
+            </div>
+            <div class="cluster-info-text">
+              <strong id="cluster-neighbors-text">18 vecinos atentos</strong>
+              <span>Postes inteligentes activos en el cuadrante</span>
+            </div>
+            <span class="cluster-dist-tag" id="floating-dist-badge">150M</span>
+          </div>
+
           <div class="incident-card-actions">
             <button type="button" class="btn-incident-route" id="btn-floating-view-route">
-              <span class="action-icon">⚠️</span> Ver ruta segura (<span id="floating-route-eta">12m</span>)
+              <span class="action-icon">🔀</span> Ver ruta segura (<span id="floating-route-eta">12m</span>)
             </button>
             <button type="button" class="btn-incident-notify" id="btn-floating-notify">
-              <span class="action-icon">📢</span> Avisar
+              <span class="action-icon">📢</span> Zumbido
             </button>
           </div>
         </div>
 
-        <!-- Subtle Tactical Map Legend Pill -->
-        <div class="map-legend-pill">
-          <div class="legend-item"><span class="dot-legend dot-crit"></span> Crítico</div>
-          <div class="legend-item"><span class="dot-legend dot-warn"></span> Sondeo</div>
-          <div class="legend-item"><span class="dot-legend dot-safe"></span> Seguro</div>
+        <!-- Desktop Map Legend Bar (Bottom Center Mockup) -->
+        <div class="desktop-map-legend-pill" id="desktop-map-legend">
+          <div class="legend-dot-item"><span class="legend-color-dot dot-verified"></span> Zona Verificada</div>
+          <div class="legend-dot-item"><span class="legend-color-dot dot-assigned"></span> Ruta Asignada</div>
+          <div class="legend-dot-item"><span class="legend-color-dot dot-preventive"></span> Atención Preventiva</div>
         </div>
+
+        <!-- Desktop Direct Dispatch Enlace & SOS Button (Bottom Right Mockup) -->
+        <div class="desktop-direct-c2-block" id="desktop-direct-c2-block">
+          <div class="direct-c2-text-col">
+            <span class="direct-c2-label">ENLACE DIRECTO</span>
+            <strong class="direct-c2-target" id="direct-c2-target-name">Serenazgo San Isidro</strong>
+          </div>
+          <button type="button" class="desktop-sos-big-btn" id="btn-desktop-sos-fab" title="Disparo Inmediato de Emergencia SOS">
+            SOS
+          </button>
+        </div>
+
       </section>
 
     </main>
+
+    <!-- Desktop Institutional Footer Bar -->
+    <footer class="app-desktop-footer" id="app-desktop-footer">
+      <div class="footer-left">
+        <div class="footer-squircle-icon">🐝</div>
+        <span>© 2026 Beja SafeNet Systems. Red comunitaria de vigilancia preventiva.</span>
+      </div>
+      <div class="footer-right">
+        <a href="#" class="footer-link" id="link-protocols">Protocolos</a>
+        <span class="footer-sep">•</span>
+        <a href="#" class="footer-link" id="link-help">Centros de Ayuda</a>
+        <span class="footer-sep">•</span>
+        <a href="#" class="footer-link" id="link-privacy">Privacidad y Datos</a>
+      </div>
+    </footer>
 
     <!-- Bottom Unified Floating Dock Navigation Bar (Mockup) -->
     <nav class="bottom-nav-bar unified-dock-bar" id="unified-bottom-dock" aria-label="Navegación principal">
