@@ -266,6 +266,9 @@
       this.STORAGE_KEY_INCIDENTS = 'colmena_incidents_active_v2';
       this.STORAGE_KEY_HISTORY = 'colmena_incidents_history_v2';
 
+      this.CRITICAL_RED_DURATION_MS = 8 * 60 * 1000; // 8 minutes active red alarm
+      this.COOLING_YELLOW_DURATION_MS = 20 * 60 * 1000; // 20 minutes yellow preventive cooling
+
       try {
         localStorage.removeItem('colmena_incidents_active_v1');
         localStorage.removeItem('colmena_incidents_history_v1');
@@ -278,6 +281,10 @@
         this.incidents = this.loadIncidents();
         this.history = this.loadHistory();
       });
+
+      this.decayInterval = setInterval(() => {
+        this.cleanupExpiredIncidents();
+      }, 20000);
     }
 
     patrolIncident(incidentId, unitData = { code: 'PATRULLA-CUADRANTE', etaMinutes: 0 }) {
@@ -398,31 +405,56 @@
           changed = true;
           return;
         }
-        const ageMs = now - (inc.updatedAt || inc.createdAt);
-        // Probing dissolves after 10 minutes
-        if (inc.status === INCIDENT_STATES.PROBING && ageMs > 10 * 60 * 1000) {
+
+        const referenceTime = inc.criticalStartedAt || inc.updatedAt || inc.createdAt;
+        const ageMs = now - referenceTime;
+
+        // 1. Critical Swarm & Dispatched: DEGRADE from ROJO to AMARILLO after 8 minutes
+        if ((inc.status === INCIDENT_STATES.CRITICAL_SWARM || inc.status === INCIDENT_STATES.DISPATCHED) && ageMs > this.CRITICAL_RED_DURATION_MS) {
+          changed = true;
+          inc.status = INCIDENT_STATES.PROBING;
+          inc.coolingDown = true;
+          inc.decayedFromCritical = true;
+          inc.coolingStartedAt = now;
+          inc.updatedAt = now;
+          active.push(inc);
+          return;
+        }
+
+        // 2. Probing (AMARILLO): Stays 20m in cautionary yellow, then archives to historical heatmap
+        if (inc.status === INCIDENT_STATES.PROBING) {
+          const yellowTime = inc.coolingStartedAt || inc.updatedAt || inc.createdAt;
+          const yellowAgeMs = now - yellowTime;
+          if (yellowAgeMs > this.COOLING_YELLOW_DURATION_MS) {
+            changed = true;
+            this.history.push({
+              lat: inc.lat,
+              lng: inc.lng,
+              category: inc.category,
+              weight: 0.5,
+              timestamp: inc.createdAt,
+              timeOfDay: new Date(inc.createdAt).getHours() >= 19 || new Date(inc.createdAt).getHours() <= 5 ? 'NIGHT' : 'DAY'
+            });
+            this.recordDismissedId(inc.id);
+            return;
+          }
+        }
+
+        // 3. Patrol Attended: Active for 20 minutes, then archive
+        if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > this.COOLING_YELLOW_DURATION_MS) {
           changed = true;
           this.recordDismissedId(inc.id);
           return;
         }
-        // Critical auto-archives after 30 minutes
-        if ((inc.status === INCIDENT_STATES.CRITICAL_SWARM || inc.status === INCIDENT_STATES.DISPATCHED) && ageMs > 30 * 60 * 1000) {
-          changed = true;
-          this.recordDismissedId(inc.id);
-          return;
-        }
-        // Patrol attended archives after 20 minutes
-        if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > 20 * 60 * 1000) {
-          changed = true;
-          this.recordDismissedId(inc.id);
-          return;
-        }
+
         active.push(inc);
       });
 
       if (changed) {
         this.incidents = active;
         this.saveIncidents();
+        this.saveHistory();
+        syncBus.emit('INCIDENT_MUTATION', { action: 'DECAY_EVALUATION', count: this.incidents.length });
       }
     }
 

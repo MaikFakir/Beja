@@ -315,9 +315,13 @@ class CitizenApp {
   setupEventHandlers() {
     // Escalate to critical swarm
     syncBus.on('SWARM_ESCALATED_CRITICAL', ({ incident }) => {
-      sounds.playCriticalAlarm();
-      sounds.speakAlert(`Alerta comunitaria: ${INCIDENT_CATEGORIES[incident.category]?.name || 'Peligro'} confirmado en tu cuadrante.`);
-      this.showToast(`🚨 ¡PELIGRO ENJAMBRE CONFIRMADO! ${incident.reportCount} reportes en tu zona.`, 'critical');
+      const eventTime = incident.reactivatedAt || incident.updatedAt || incident.createdAt || Date.now();
+      if (swarmEngine.shouldNotifyAlert(incident.id, eventTime)) {
+        sounds.playCriticalAlarm();
+        sounds.speakAlert(`Alerta comunitaria: ${INCIDENT_CATEGORIES[incident.category]?.name || 'Peligro'} confirmado en tu cuadrante.`);
+        this.showToast(`🚨 ¡PELIGRO ENJAMBRE CONFIRMADO! ${incident.reportCount} reportes en tu zona.`, 'critical');
+        swarmEngine.recordAlertNotified(incident.id, eventTime);
+      }
       this.renderRecentIncidentsFeed();
     });
 
@@ -329,9 +333,13 @@ class CitizenApp {
 
     // Community Broadcast from authorities
     syncBus.on('COMMUNITY_BROADCAST', (broadcast) => {
-      sounds.playCriticalAlarm();
-      sounds.speakAlert(`Comunicado oficial: ${broadcast.title}`);
-      this.showBroadcastModal(broadcast);
+      const eventTime = broadcast.timestamp || Date.now();
+      if (broadcast.active !== false && swarmEngine.shouldNotifyAlert(broadcast.id, eventTime)) {
+        sounds.playCriticalAlarm();
+        sounds.speakAlert(`Comunicado oficial: ${broadcast.title}`);
+        this.showBroadcastModal(broadcast);
+        swarmEngine.recordAlertNotified(broadcast.id, eventTime);
+      }
     });
 
     // General incident updates
@@ -350,7 +358,16 @@ class CitizenApp {
     const banner = document.getElementById('geofence-warning-banner');
     if (!banner) return;
 
-    if (threat) {
+    if (threat && threat.incident) {
+      try {
+        const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('beja_dismissed_geofence_v1') : null;
+        const dismissed = raw ? JSON.parse(raw) : [];
+        if (dismissed.includes(threat.incident.id)) {
+          banner.classList.add('hidden');
+          return;
+        }
+      } catch (e) {}
+
       const cat = INCIDENT_CATEGORIES[threat.incident.category] || INCIDENT_CATEGORIES.FIGHT;
       const isCritical = threat.incident.status === INCIDENT_STATES.CRITICAL_SWARM;
 
@@ -364,7 +381,20 @@ class CitizenApp {
             <span>${cat.icon} ${cat.name} (${threat.incident.reportCount} reportes activos)</span>
           </div>
         </div>
+        <button class="banner-dismiss-btn" id="btn-dismiss-geofence" aria-label="Cerrar aviso">✕</button>
       `;
+      banner.querySelector('#btn-dismiss-geofence')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        banner.classList.add('hidden');
+        try {
+          const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('beja_dismissed_geofence_v1') : null;
+          const set = raw ? JSON.parse(raw) : [];
+          if (!set.includes(threat.incident.id)) {
+            set.push(threat.incident.id);
+            sessionStorage.setItem('beja_dismissed_geofence_v1', JSON.stringify(set));
+          }
+        } catch (err) {}
+      });
       sounds.playWarningPing();
     } else {
       banner.classList.add('hidden');

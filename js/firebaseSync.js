@@ -57,9 +57,9 @@ class FirebaseSyncService {
     if (!this.db) return;
 
     // 1. Escuchar colección de incidentes
+    let isInitialIncidentsLoad = true;
     this.unsubscribeIncidents = this.db.collection('incidents').onSnapshot((snapshot) => {
       const cloudIncidents = [];
-      let hasNewIncident = false;
       const dismissedIds = swarmEngine.getDismissedIds ? swarmEngine.getDismissedIds() : [];
 
       snapshot.forEach(doc => {
@@ -72,12 +72,6 @@ class FirebaseSyncService {
         }
 
         cloudIncidents.push(data);
-
-        // Detectar si es un incidente nuevo para disparar sirena comunitaria
-        if (!this.lastKnownIncidentIds.has(doc.id)) {
-          this.lastKnownIncidentIds.add(doc.id);
-          hasNewIncident = true;
-        }
       });
 
       // Actualizar el motor de enjambre local con los datos de la nube
@@ -87,26 +81,68 @@ class FirebaseSyncService {
       // Emitir evento de mutación para que la vista del mapa y feeds se actualicen
       syncBus.emit('INCIDENT_MUTATION', { action: 'CLOUD_SYNC', count: cloudIncidents.length });
 
-      if (hasNewIncident && cloudIncidents.length > 0) {
-        const latest = cloudIncidents[cloudIncidents.length - 1];
-        if (latest.status === INCIDENT_STATES.CRITICAL_SWARM) {
-          sounds.playCriticalAlarm();
-          sounds.speakAlert(`Alerta comunitaria: ${latest.category || 'Peligro'} confirmado.`);
-        } else if (latest.status !== INCIDENT_STATES.PATROL_ATTENDED) {
-          sounds.playWarningPing();
-        }
+      if (isInitialIncidentsLoad) {
+        // En arranque inicial: registrar IDs conocidos y SOLO sonar alarma si el evento ACABA de ocurrir (<= 3 min) y no ha sido notificado en esta sesión
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          data.id = doc.id;
+          this.lastKnownIncidentIds.add(doc.id);
+          if (data.status === INCIDENT_STATES.CRITICAL_SWARM) {
+            const eventTime = data.reactivatedAt || data.updatedAt || data.createdAt || 0;
+            if (swarmEngine.shouldNotifyAlert(doc.id, eventTime)) {
+              sounds.playCriticalAlarm();
+              sounds.speakAlert(`Alerta comunitaria: ${data.category || 'Peligro'} confirmado.`);
+              swarmEngine.recordAlertNotified(doc.id, eventTime);
+            }
+          }
+        });
+        isInitialIncidentsLoad = false;
+        return;
       }
+
+      // Actualizaciones en vivo mientras la app está abierta
+      snapshot.docChanges().forEach(change => {
+        if (change.type === 'added' || change.type === 'modified') {
+          const data = change.doc.data();
+          data.id = change.doc.id;
+          if (data.status === INCIDENT_STATES.CRITICAL_SWARM) {
+            const eventTime = data.reactivatedAt || data.updatedAt || data.createdAt || Date.now();
+            if (swarmEngine.shouldNotifyAlert(data.id, eventTime)) {
+              sounds.playCriticalAlarm();
+              sounds.speakAlert(`Alerta comunitaria: ${data.category || 'Peligro'} confirmado.`);
+              swarmEngine.recordAlertNotified(data.id, eventTime);
+            }
+          }
+        }
+      });
     }, (error) => {
       console.warn('⚠️ Error en sincronización de incidentes:', error);
     });
 
     // 2. Escuchar transmisiones oficiales de emergencia
+    let initialBroadcastLoad = true;
     this.unsubscribeBroadcasts = this.db.collection('broadcasts').onSnapshot((snapshot) => {
+      if (initialBroadcastLoad) {
+        snapshot.forEach(doc => {
+          const broadcastData = doc.data();
+          const bcId = doc.id || broadcastData.id;
+          const eventTime = broadcastData.timestamp || 0;
+          if (broadcastData.active !== false && swarmEngine.shouldNotifyAlert(bcId, eventTime)) {
+            syncBus.emit('COMMUNITY_BROADCAST', { ...broadcastData, id: bcId });
+          }
+        });
+        initialBroadcastLoad = false;
+        return;
+      }
+
       snapshot.docChanges().forEach(change => {
         if (change.type === 'added') {
           const broadcastData = change.doc.data();
-          // Disparar modal de alerta oficial en todos los dispositivos
-          syncBus.emit('COMMUNITY_BROADCAST', broadcastData);
+          const bcId = change.doc.id || broadcastData.id;
+          const eventTime = broadcastData.timestamp || Date.now();
+          if (broadcastData.active !== false && swarmEngine.shouldNotifyAlert(bcId, eventTime)) {
+            syncBus.emit('COMMUNITY_BROADCAST', { ...broadcastData, id: bcId });
+          }
         }
       });
     });

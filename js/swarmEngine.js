@@ -31,6 +31,11 @@ export class SwarmEngine {
     this.STORAGE_KEY_HISTORY = 'colmena_incidents_history_v2';
     this.STORAGE_KEY_TRUST = 'colmena_user_trust_v1';
 
+    this.CRITICAL_RED_DURATION_MS = 8 * 60 * 1000; // 8 minutes active red alarm
+    this.COOLING_YELLOW_DURATION_MS = 20 * 60 * 1000; // 20 minutes yellow preventive cooling
+    this.FRESH_ALERT_WINDOW_MS = 3 * 60 * 1000; // 3 minutes freshness window for audio/toasts
+    this.SESSION_NOTIFIED_KEY = 'beja_notified_alerts_session_v1';
+
     // Purge legacy v1 mock clutter
     try {
       localStorage.removeItem('colmena_incidents_active_v1');
@@ -42,6 +47,53 @@ export class SwarmEngine {
     this.userTrust = this.loadUserTrust();
 
     this.listenToSyncEvents();
+
+    // Heartbeat ticker: evaluate decay transitions and auto-archive every 20 seconds
+    this.decayInterval = setInterval(() => {
+      this.cleanupExpiredIncidents();
+    }, 20000);
+  }
+
+  /**
+   * Determine if an alert notification (audio siren, modal, toast) should be shown to user.
+   * Rules:
+   * 1. Only fire if event literally just occurred (age <= 3 minutes).
+   * 2. Only fire once per browser session for each incident ID (unless reactivated into RED).
+   */
+  shouldNotifyAlert(incidentId, eventTimestamp = Date.now()) {
+    try {
+      const age = Date.now() - Number(eventTimestamp);
+      if (age > this.FRESH_ALERT_WINDOW_MS) {
+        return false;
+      }
+
+      const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(this.SESSION_NOTIFIED_KEY) : null;
+      const map = raw ? JSON.parse(raw) : {};
+      const lastNotified = map[incidentId];
+
+      if (!lastNotified) {
+        return true;
+      }
+
+      // If re-activated with a newer timestamp after last notified, allow fresh alert
+      if (Number(eventTimestamp) > (Number(lastNotified) + 60000)) {
+        return true;
+      }
+
+      return false;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  recordAlertNotified(incidentId, eventTimestamp = Date.now()) {
+    try {
+      if (typeof sessionStorage === 'undefined') return;
+      const raw = sessionStorage.getItem(this.SESSION_NOTIFIED_KEY);
+      const map = raw ? JSON.parse(raw) : {};
+      map[incidentId] = Number(eventTimestamp);
+      sessionStorage.setItem(this.SESSION_NOTIFIED_KEY, JSON.stringify(map));
+    } catch (e) {}
   }
 
   listenToSyncEvents() {
@@ -109,15 +161,24 @@ export class SwarmEngine {
       matchingCluster.updatedAt = now;
       matchingCluster.reportCount = matchingCluster.reporters.length;
 
-      // Progressive escalation: If 2 or more reports and status was PROBING
-      if (matchingCluster.reportCount >= 2 && matchingCluster.status === INCIDENT_STATES.PROBING) {
+      // Progressive escalation / Reactivation:
+      // If incident was in PROBING (either initial report, or degraded yellow from RED)
+      // and another distinct user reports, escalate/reactivate to CRITICAL_SWARM (ROJO)
+      const isDifferentUser = !alreadyReported;
+      if (matchingCluster.status === INCIDENT_STATES.PROBING && isDifferentUser) {
         matchingCluster.status = INCIDENT_STATES.CRITICAL_SWARM;
+        matchingCluster.criticalStartedAt = now;
+        matchingCluster.coolingDown = false;
         isEscalated = true;
+        if (matchingCluster.decayedFromCritical) {
+          matchingCluster.reactivatedAt = now;
+          matchingCluster.reactivatedBy = userId;
+        }
       }
 
       resultIncident = matchingCluster;
     } else {
-      // Create new PROBING incident (1 report)
+      // Create new PROBING incident (1 report: yellow preventive radar)
       resultIncident = {
         id: 'inc_' + now + '_' + Math.random().toString(36).substr(2, 5),
         lat,
@@ -126,6 +187,8 @@ export class SwarmEngine {
         status: INCIDENT_STATES.PROBING,
         createdAt: now,
         updatedAt: now,
+        criticalStartedAt: null,
+        coolingDown: false,
         reportCount: 1,
         reporters: [{
           userId,
@@ -154,6 +217,98 @@ export class SwarmEngine {
     }
 
     return { incident: resultIncident, isEscalated };
+  }
+
+  /**
+   * Vote on incident validity as a citizen witness on the street (<= 50m)
+   * Reactivates yellow alert to RED if confirmed by another user
+   */
+  voteIncidentVerdict(incidentId, isReal, userCoords = null) {
+    const myId = syncBus.getSenderId();
+    this.incidents = this.loadIncidents();
+    const inc = this.incidents.find(i => i.id === incidentId);
+    if (!inc) return { success: false, reason: 'NOT_FOUND' };
+
+    if (!inc.reporters) inc.reporters = [];
+    if (!inc.refutations) inc.refutations = [];
+
+    // Check if user already participated
+    const alreadyReported = inc.reporters.some(r => r.userId === myId);
+    const alreadyRefuted = inc.refutations.some(r => r.userId === myId);
+    if (alreadyReported || alreadyRefuted) {
+      return { success: false, reason: 'ALREADY_VOTED' };
+    }
+
+    // Check distance: strictly within CLUSTER_RADIUS_METERS (50m) on the same street
+    if (userCoords && userCoords.lat && userCoords.lng && inc.lat && inc.lng) {
+      const dist = Math.round(this.calculateDistanceMeters(userCoords.lat, userCoords.lng, inc.lat, inc.lng));
+      if (dist > this.CLUSTER_RADIUS_METERS) {
+        return { success: false, reason: 'TOO_FAR', distance: dist };
+      }
+    }
+
+    if (isReal) {
+      inc.reporters.push({
+        userId: myId,
+        timestamp: Date.now(),
+        verdict: 'REAL',
+        note: 'Confirmado como REAL por testigo presencial en la calle.'
+      });
+      inc.reportCount = inc.reporters.length;
+      inc.updatedAt = Date.now();
+
+      let isEscalated = false;
+      // Reactivate/Escalate to RED if status is PROBING (yellow cooling or initial probe)
+      if (inc.status === INCIDENT_STATES.PROBING) {
+        inc.status = INCIDENT_STATES.CRITICAL_SWARM;
+        inc.criticalStartedAt = Date.now();
+        inc.coolingDown = false;
+        isEscalated = true;
+        if (inc.decayedFromCritical) {
+          inc.reactivatedAt = Date.now();
+          inc.reactivatedBy = myId;
+        }
+      }
+
+      this.saveIncidents();
+      this.updateTrustScore(myId, +5);
+
+      syncBus.emit('INCIDENT_MUTATION', { incident: inc, isEscalated });
+      if (isEscalated) {
+        syncBus.emit('SWARM_ESCALATED_CRITICAL', { incident: inc });
+      }
+      return { success: true, verdict: 'REAL', isEscalated, incident: inc };
+    } else {
+      inc.refutations.push({
+        userId: myId,
+        timestamp: Date.now(),
+        verdict: 'FALSE',
+        note: 'Desmentido como FALSO por testigo presencial en la calle.'
+      });
+
+      this.updateTrustScore(myId, +5);
+
+      // If 2 or more witnesses refute the alert, dismiss it as FALSE_ALARM
+      let isDismissed = false;
+      if (inc.refutations.length >= 2) {
+        this.recordDismissedId(incidentId);
+        this.incidents = this.incidents.filter(i => i.id !== incidentId);
+        this.saveIncidents();
+        syncBus.emit('INCIDENT_MUTATION', { incidentId, status: INCIDENT_STATES.FALSE_ALARM, isDismissed: true });
+        syncBus.emit('INCIDENT_DISMISSED', { incidentId });
+        isDismissed = true;
+        return { success: true, verdict: 'FALSE', isDismissed, incident: inc };
+      }
+
+      this.saveIncidents();
+      syncBus.emit('INCIDENT_MUTATION', { incident: inc });
+      return { success: true, verdict: 'FALSE', isDismissed: false, incident: inc };
+    }
+  }
+
+  validateIncidentAsWitness(incidentId, userCoords = null) {
+    const res = this.voteIncidentVerdict(incidentId, true, userCoords);
+    return res.success;
   }
 
   /**
@@ -346,10 +501,12 @@ export class SwarmEngine {
   }
 
   /**
-   * Precise Lifecycle & Expiration Engine:
-   * - Probing (1 unconfirmed report): Dissolves after 10 minutes (prevents false lingering).
-   * - Critical Swarm (2+ reports): Auto-archives to history after 30 minutes.
-   * - Patrol Attended (Blue alert): Stays visible for 20 minutes to inform the community, then auto-archives to history.
+   * Precise Lifecycle & Degradation Engine:
+   * 1. CRITICAL SWARM (ROJO): Stays active in RED for 8 minutes (this.CRITICAL_RED_DURATION_MS).
+   *    If no other user reactivates/confirms it within 8 minutes, it DEGRADES from ROJO to AMARILLO (PROBING / coolingDown).
+   * 2. AMARILLO (Sondeo / Atención Preventiva): Stays active for 20 minutes (this.COOLING_YELLOW_DURATION_MS).
+   *    If no user reactivates it within 20m, it auto-archives to historical crime heatmap and clears from radar.
+   * 3. PATROL ATTENDED (Tactical Blue): Active for 20 minutes, then auto-archives.
    */
   cleanupExpiredIncidents() {
     const now = Date.now();
@@ -364,32 +521,42 @@ export class SwarmEngine {
         return;
       }
 
-      const ageMs = now - (inc.updatedAt || inc.createdAt);
+      const referenceTime = inc.criticalStartedAt || inc.updatedAt || inc.createdAt;
+      const ageMs = now - referenceTime;
 
-      // 1. Probing (1 report): Expire after 10 minutes if no second confirmation
-      if (inc.status === INCIDENT_STATES.PROBING && ageMs > 10 * 60 * 1000) {
+      // 1. Critical Swarm & Dispatched: DEGRADE from ROJO to AMARILLO after 8 minutes
+      if ((inc.status === INCIDENT_STATES.CRITICAL_SWARM || inc.status === INCIDENT_STATES.DISPATCHED) && ageMs > this.CRITICAL_RED_DURATION_MS) {
         changed = true;
-        this.recordDismissedId(inc.id);
+        inc.status = INCIDENT_STATES.PROBING;
+        inc.coolingDown = true;
+        inc.decayedFromCritical = true;
+        inc.coolingStartedAt = now;
+        inc.updatedAt = now;
+        active.push(inc);
         return;
       }
 
-      // 2. Critical Swarm & Dispatched: Auto-archive after 30 minutes
-      if ((inc.status === INCIDENT_STATES.CRITICAL_SWARM || inc.status === INCIDENT_STATES.DISPATCHED) && ageMs > 30 * 60 * 1000) {
-        changed = true;
-        this.history.push({
-          lat: inc.lat,
-          lng: inc.lng,
-          category: inc.category,
-          weight: 0.6,
-          timestamp: inc.createdAt,
-          timeOfDay: new Date(inc.createdAt).getHours() >= 19 || new Date(inc.createdAt).getHours() <= 5 ? 'NIGHT' : 'DAY'
-        });
-        this.recordDismissedId(inc.id);
-        return;
+      // 2. Probing (AMARILLO): Stays 20m in cautionary yellow, then archives to historical heatmap
+      if (inc.status === INCIDENT_STATES.PROBING) {
+        const yellowTime = inc.coolingStartedAt || inc.updatedAt || inc.createdAt;
+        const yellowAgeMs = now - yellowTime;
+        if (yellowAgeMs > this.COOLING_YELLOW_DURATION_MS) {
+          changed = true;
+          this.history.push({
+            lat: inc.lat,
+            lng: inc.lng,
+            category: inc.category,
+            weight: 0.5,
+            timestamp: inc.createdAt,
+            timeOfDay: new Date(inc.createdAt).getHours() >= 19 || new Date(inc.createdAt).getHours() <= 5 ? 'NIGHT' : 'DAY'
+          });
+          this.recordDismissedId(inc.id);
+          return;
+        }
       }
 
       // 3. Patrol Attended: Active for 20 minutes, then archive
-      if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > 20 * 60 * 1000) {
+      if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > this.COOLING_YELLOW_DURATION_MS) {
         changed = true;
         this.recordDismissedId(inc.id);
         return;
@@ -402,6 +569,7 @@ export class SwarmEngine {
       this.incidents = active;
       this.saveIncidents();
       this.saveHistory();
+      syncBus.emit('INCIDENT_MUTATION', { action: 'DECAY_EVALUATION', count: this.incidents.length });
     }
   }
 

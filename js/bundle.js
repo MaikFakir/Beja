@@ -381,6 +381,11 @@
       this.STORAGE_KEY_INCIDENTS = 'colmena_incidents_active_v2';
       this.STORAGE_KEY_HISTORY = 'colmena_incidents_history_v2';
 
+      this.CRITICAL_RED_DURATION_MS = 8 * 60 * 1000; // 8 minutes active red alarm
+      this.COOLING_YELLOW_DURATION_MS = 20 * 60 * 1000; // 20 minutes yellow preventive cooling
+      this.FRESH_ALERT_WINDOW_MS = 3 * 60 * 1000; // 3 minutes freshness window for audio/toasts
+      this.SESSION_NOTIFIED_KEY = 'beja_notified_alerts_session_v1';
+
       // Purge legacy v1 mock clutter from user browser
       try {
         localStorage.removeItem('colmena_incidents_active_v1');
@@ -394,6 +399,53 @@
         this.incidents = this.loadIncidents();
         this.history = this.loadHistory();
       });
+
+      // Heartbeat ticker: evaluate decay transitions and auto-archive every 20 seconds
+      this.decayInterval = setInterval(() => {
+        this.cleanupExpiredIncidents();
+      }, 20000);
+    }
+
+    /**
+     * Determine if an alert notification (audio siren, modal, toast) should be shown to user.
+     * Rules:
+     * 1. Only fire if event literally just occurred (age <= 3 minutes).
+     * 2. Only fire once per browser session for each incident ID (unless reactivated into RED).
+     */
+    shouldNotifyAlert(incidentId, eventTimestamp = Date.now()) {
+      try {
+        const age = Date.now() - Number(eventTimestamp);
+        if (age > this.FRESH_ALERT_WINDOW_MS) {
+          return false;
+        }
+
+        const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(this.SESSION_NOTIFIED_KEY) : null;
+        const map = raw ? JSON.parse(raw) : {};
+        const lastNotified = map[incidentId];
+
+        if (!lastNotified) {
+          return true;
+        }
+
+        // If re-activated with a newer timestamp after last notified, allow fresh alert
+        if (Number(eventTimestamp) > (Number(lastNotified) + 60000)) {
+          return true;
+        }
+
+        return false;
+      } catch (e) {
+        return true;
+      }
+    }
+
+    recordAlertNotified(incidentId, eventTimestamp = Date.now()) {
+      try {
+        if (typeof sessionStorage === 'undefined') return;
+        const raw = sessionStorage.getItem(this.SESSION_NOTIFIED_KEY);
+        const map = raw ? JSON.parse(raw) : {};
+        map[incidentId] = Number(eventTimestamp);
+        sessionStorage.setItem(this.SESSION_NOTIFIED_KEY, JSON.stringify(map));
+      } catch (e) {}
     }
 
     calculateDistanceMeters(lat1, lon1, lat2, lon2) {
@@ -420,13 +472,24 @@
       let isEscalated = false;
 
       if (matchingCluster) {
+        const alreadyReported = matchingCluster.reporters.some(r => r.userId === userId);
         matchingCluster.reporters.push({ userId, timestamp: now, note });
         matchingCluster.updatedAt = now;
         matchingCluster.reportCount = matchingCluster.reporters.length;
 
-        if (matchingCluster.reportCount >= 2 && matchingCluster.status === INCIDENT_STATES.PROBING) {
+        // Progressive escalation / Reactivation:
+        // If incident was in PROBING (either initial report, or degraded yellow from RED)
+        // and another distinct user reports, escalate/reactivate to CRITICAL_SWARM (ROJO)
+        const isDifferentUser = !alreadyReported;
+        if (matchingCluster.status === INCIDENT_STATES.PROBING && isDifferentUser) {
           matchingCluster.status = INCIDENT_STATES.CRITICAL_SWARM;
+          matchingCluster.criticalStartedAt = now;
+          matchingCluster.coolingDown = false;
           isEscalated = true;
+          if (matchingCluster.decayedFromCritical) {
+            matchingCluster.reactivatedAt = now;
+            matchingCluster.reactivatedBy = userId;
+          }
           trustEngine.recordVerifiedReport();
         }
         resultIncident = matchingCluster;
@@ -439,6 +502,8 @@
           status: INCIDENT_STATES.PROBING,
           createdAt: now,
           updatedAt: now,
+          criticalStartedAt: null,
+          coolingDown: false,
           reportCount: 1,
           creatorId: userId,
           reporters: [{ userId, timestamp: now, note }],
@@ -501,11 +566,19 @@
           note: 'Confirmado como REAL por testigo presencial en la calle.'
         });
         inc.reportCount = inc.reporters.length;
+        inc.updatedAt = Date.now();
 
         let isEscalated = false;
-        if (inc.reportCount >= 2 && inc.status === INCIDENT_STATES.PROBING) {
+        // Reactivate/Escalate to RED if status is PROBING (yellow cooling or initial probe)
+        if (inc.status === INCIDENT_STATES.PROBING) {
           inc.status = INCIDENT_STATES.CRITICAL_SWARM;
+          inc.criticalStartedAt = Date.now();
+          inc.coolingDown = false;
           isEscalated = true;
+          if (inc.decayedFromCritical) {
+            inc.reactivatedAt = Date.now();
+            inc.reactivatedBy = myId;
+          }
         }
 
         this.saveIncidents();
@@ -630,35 +703,61 @@
       const dismissed = this.getDismissedIds();
 
       this.incidents.forEach(inc => {
+        // If manually resolved/dismissed, drop it immediately
         if (dismissed.includes(inc.id) || inc.status === INCIDENT_STATES.RESOLVED || inc.status === INCIDENT_STATES.FALSE_ALARM) {
           changed = true;
           return;
         }
-        const ageMs = now - (inc.updatedAt || inc.createdAt);
-        // Probing dissolves after 10 minutes
-        if (inc.status === INCIDENT_STATES.PROBING && ageMs > 10 * 60 * 1000) {
+
+        const referenceTime = inc.criticalStartedAt || inc.updatedAt || inc.createdAt;
+        const ageMs = now - referenceTime;
+
+        // 1. Critical Swarm & Dispatched: DEGRADE from ROJO to AMARILLO after 8 minutes
+        if ((inc.status === INCIDENT_STATES.CRITICAL_SWARM || inc.status === INCIDENT_STATES.DISPATCHED) && ageMs > this.CRITICAL_RED_DURATION_MS) {
+          changed = true;
+          inc.status = INCIDENT_STATES.PROBING;
+          inc.coolingDown = true;
+          inc.decayedFromCritical = true;
+          inc.coolingStartedAt = now;
+          inc.updatedAt = now;
+          active.push(inc);
+          return;
+        }
+
+        // 2. Probing (AMARILLO): Stays 20m in cautionary yellow, then archives to historical heatmap
+        if (inc.status === INCIDENT_STATES.PROBING) {
+          const yellowTime = inc.coolingStartedAt || inc.updatedAt || inc.createdAt;
+          const yellowAgeMs = now - yellowTime;
+          if (yellowAgeMs > this.COOLING_YELLOW_DURATION_MS) {
+            changed = true;
+            this.history.push({
+              lat: inc.lat,
+              lng: inc.lng,
+              category: inc.category,
+              weight: 0.5,
+              timestamp: inc.createdAt,
+              timeOfDay: new Date(inc.createdAt).getHours() >= 19 || new Date(inc.createdAt).getHours() <= 5 ? 'NIGHT' : 'DAY'
+            });
+            this.recordDismissedId(inc.id);
+            return;
+          }
+        }
+
+        // 3. Patrol Attended: Active for 20 minutes, then archive
+        if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > this.COOLING_YELLOW_DURATION_MS) {
           changed = true;
           this.recordDismissedId(inc.id);
           return;
         }
-        // Critical auto-archives after 30 minutes
-        if ((inc.status === INCIDENT_STATES.CRITICAL_SWARM || inc.status === INCIDENT_STATES.DISPATCHED) && ageMs > 30 * 60 * 1000) {
-          changed = true;
-          this.recordDismissedId(inc.id);
-          return;
-        }
-        // Patrol attended archives after 20 minutes
-        if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > 20 * 60 * 1000) {
-          changed = true;
-          this.recordDismissedId(inc.id);
-          return;
-        }
+
         active.push(inc);
       });
 
       if (changed) {
         this.incidents = active;
         this.saveIncidents();
+        this.saveHistory();
+        syncBus.emit('INCIDENT_MUTATION', { action: 'DECAY_EVALUATION', count: this.incidents.length });
       }
     }
 
@@ -956,11 +1055,30 @@
       });
     }
 
+    getDismissedGeofenceIds() {
+      try {
+        const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('beja_dismissed_geofence_v1') : null;
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
     checkGeofence() {
       const incidents = swarmEngine.loadIncidents();
       let nearest = null, minDist = Infinity;
+      const dismissedIds = this.getDismissedGeofenceIds();
+
       incidents.forEach(inc => {
         if (inc.status === INCIDENT_STATES.RESOLVED || inc.status === INCIDENT_STATES.FALSE_ALARM) return;
+        if (dismissedIds.includes(inc.id)) return;
+
+        // ONLY trigger geofence warning banner for active ROJO (CRITICAL_SWARM / DISPATCHED)
+        // or a brand-new PROBING probe (<= 5 min). Degraded yellow cooling alerts do NOT trigger aggressive banners!
+        const isCritical = inc.status === INCIDENT_STATES.CRITICAL_SWARM || inc.status === INCIDENT_STATES.DISPATCHED;
+        const isFreshProbe = inc.status === INCIDENT_STATES.PROBING && !inc.coolingDown && (Date.now() - (inc.createdAt || 0) <= 5 * 60 * 1000);
+        if (!isCritical && !isFreshProbe) return;
+
         const dist = swarmEngine.calculateDistanceMeters(this.userLocation.lat, this.userLocation.lng, inc.lat, inc.lng);
         if (dist <= 220 && dist < minDist) {
           minDist = dist;
@@ -1528,31 +1646,60 @@
     listenToCloudChanges() {
       if (!this.db) return;
 
+      let isInitialIncidentsLoad = true;
       this.db.collection('incidents').onSnapshot((snapshot) => {
         const cloudIncidents = [];
-        let hasNewCritical = false;
+        const dismissedIds = swarmEngine.getDismissedIds ? swarmEngine.getDismissedIds() : [];
 
         snapshot.forEach(doc => {
           const data = doc.data();
           data.id = doc.id;
-          cloudIncidents.push(data);
-
-          if (!this.lastKnownIncidentIds.has(doc.id)) {
-            this.lastKnownIncidentIds.add(doc.id);
-            if (data.status === INCIDENT_STATES.CRITICAL_SWARM) {
-              hasNewCritical = true;
-            }
+          if (data.status === INCIDENT_STATES.RESOLVED || data.status === INCIDENT_STATES.FALSE_ALARM || dismissedIds.includes(doc.id)) {
+            return;
           }
+          cloudIncidents.push(data);
         });
 
         if (cloudIncidents.length > 0) {
           swarmEngine.incidents = cloudIncidents;
           localStorage.setItem(swarmEngine.STORAGE_KEY_INCIDENTS, JSON.stringify(cloudIncidents));
           syncBus.emit('INCIDENT_MUTATION', { action: 'CLOUD_SYNC' });
-          if (hasNewCritical) {
-            sounds.playCriticalAlarm();
-          }
         }
+
+        if (isInitialIncidentsLoad) {
+          // On startup load: index known IDs and ONLY notify if there is an event that literally just happened (<= 3 min) and not yet notified this session
+          snapshot.forEach(doc => {
+            const data = doc.data();
+            data.id = doc.id;
+            this.lastKnownIncidentIds.add(doc.id);
+            if (data.status === INCIDENT_STATES.CRITICAL_SWARM) {
+              const eventTime = data.reactivatedAt || data.updatedAt || data.createdAt || 0;
+              if (swarmEngine.shouldNotifyAlert(doc.id, eventTime)) {
+                sounds.playCriticalAlarm();
+                sounds.speakAlert('Alerta comunitaria: Peligro confirmado en tu cuadrante.');
+                swarmEngine.recordAlertNotified(doc.id, eventTime);
+              }
+            }
+          });
+          isInitialIncidentsLoad = false;
+          return;
+        }
+
+        // Live updates arriving while the app is actively running
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'added' || change.type === 'modified') {
+            const data = change.doc.data();
+            data.id = change.doc.id;
+            if (data.status === INCIDENT_STATES.CRITICAL_SWARM) {
+              const eventTime = data.reactivatedAt || data.updatedAt || data.createdAt || Date.now();
+              if (swarmEngine.shouldNotifyAlert(data.id, eventTime)) {
+                sounds.playCriticalAlarm();
+                sounds.speakAlert('Alerta comunitaria: Peligro confirmado en tu cuadrante.');
+                swarmEngine.recordAlertNotified(data.id, eventTime);
+              }
+            }
+          }
+        });
       }, (err) => console.warn('Sync error:', err));
 
       let initialBroadcastLoad = true;
@@ -1561,6 +1708,13 @@
           // On startup load, index existing broadcasts as seen so alarms do not fire automatically
           snapshot.forEach(doc => {
             this.seenBroadcastIds.add(doc.id);
+            const data = doc.data();
+            const bcId = doc.id || data.id;
+            const eventTime = data.timestamp || 0;
+            // Only alert if literally just published (<= 3 min) and not yet notified
+            if (data.active !== false && swarmEngine.shouldNotifyAlert(bcId, eventTime)) {
+              syncBus.emit('COMMUNITY_BROADCAST', { ...data, id: bcId });
+            }
           });
           initialBroadcastLoad = false;
           return;
@@ -1572,7 +1726,10 @@
             const bcId = change.doc.id || data.id;
             if (!this.seenBroadcastIds.has(bcId)) {
               this.seenBroadcastIds.add(bcId);
-              syncBus.emit('COMMUNITY_BROADCAST', { ...data, id: bcId });
+              const eventTime = data.timestamp || Date.now();
+              if (data.active !== false && swarmEngine.shouldNotifyAlert(bcId, eventTime)) {
+                syncBus.emit('COMMUNITY_BROADCAST', { ...data, id: bcId });
+              }
             }
           }
         });
@@ -2452,7 +2609,7 @@
         if (!incidents || incidents.length === 0) {
           if (titleEl) titleEl.textContent = 'Cuadrante Seguro';
           if (timeEl) timeEl.textContent = 'activo';
-          if (subEl) subEl.textContent = 'Sin incidentes activos • 18 vecinos atentos';
+          if (subEl) subEl.textContent = 'Sin incidentes activos • Cuadrante vigilado';
           if (badgeEl) badgeEl.innerHTML = '<span>🛡️ 98% Segura</span>';
           if (iconEl) iconEl.textContent = '🛡️';
           if (etaEl) etaEl.textContent = '8m';
@@ -2472,29 +2629,50 @@
         });
 
         if (nearest) {
-          const cat = INCIDENT_CATEGORIES[nearest.category] || { name: 'Alerta SOS', icon: '🚨' };
+          const cat = INCIDENT_CATEGORIES[nearest.category] || { name: 'Alerta Comunitaria', icon: '🚨' };
           const distMeters = Math.round(minDist);
-          if (titleEl) titleEl.textContent = `Alerta Cercana`;
-          if (timeEl) timeEl.textContent = 'hace 4m';
-          if (subEl) subEl.textContent = `${cat.name} • Cruce Libertadores con Dasso`;
+
+          // Dynamic time calculation
+          const refTime = nearest.criticalStartedAt || nearest.updatedAt || nearest.createdAt || Date.now();
+          const elapsedMin = Math.max(0, Math.floor((Date.now() - refTime) / 60000));
+          const timeStr = elapsedMin === 0 ? 'hace instantes' : `hace ${elapsedMin}m`;
+
+          const isCrit = nearest.status === INCIDENT_STATES.CRITICAL_SWARM;
+          if (titleEl) titleEl.textContent = isCrit ? 'Alerta Crítica Cercana' : 'Atención Preventiva';
+          if (timeEl) timeEl.textContent = timeStr;
+
+          const reporterNote = (nearest.reporters && nearest.reporters[0] && nearest.reporters[0].note) 
+            ? nearest.reporters[0].note 
+            : `${cat.name} reportado en la zona`;
+          if (subEl) subEl.textContent = `${cat.name} • ${reporterNote}`;
           if (iconEl) iconEl.textContent = cat.icon || '⚠️';
           if (etaEl) etaEl.textContent = `${Math.max(2, Math.round(distMeters / 60))}m`;
 
           const distBadge = document.getElementById('floating-dist-badge');
           if (distBadge) distBadge.textContent = `${distMeters}M`;
           const neighborsText = document.getElementById('cluster-neighbors-text');
-          if (neighborsText) neighborsText.textContent = '18 vecinos atentos';
+          if (neighborsText) neighborsText.textContent = `${nearest.reportCount || 1} reporte(s) • ${isCrit ? 'Activo' : 'Enfriamiento'}`;
 
           if (badgeEl) {
-            if (nearest.status === INCIDENT_STATES.CRITICAL_SWARM) {
+            if (isCrit) {
               badgeEl.style.background = 'rgba(255, 51, 102, 0.15)';
               badgeEl.style.borderColor = 'rgba(255, 51, 102, 0.4)';
               badgeEl.style.color = '#ff3366';
-              badgeEl.innerHTML = '<span>⚠️ Zona Roja</span>';
-            } else {
+              badgeEl.innerHTML = '<span>⚠️ Zona Roja (Activa)</span>';
+            } else if (nearest.coolingDown || nearest.status === INCIDENT_STATES.PROBING) {
               badgeEl.style.background = 'rgba(245, 158, 11, 0.15)';
               badgeEl.style.borderColor = 'rgba(245, 158, 11, 0.4)';
               badgeEl.style.color = '#f59e0b';
+              badgeEl.innerHTML = '<span>🟡 Atención Preventiva</span>';
+            } else if (nearest.status === INCIDENT_STATES.PATROL_ATTENDED) {
+              badgeEl.style.background = 'rgba(59, 130, 246, 0.15)';
+              badgeEl.style.borderColor = 'rgba(59, 130, 246, 0.4)';
+              badgeEl.style.color = '#3b82f6';
+              badgeEl.innerHTML = '<span>👮 Cuadrante en Sitio</span>';
+            } else {
+              badgeEl.style.background = 'rgba(16, 185, 129, 0.15)';
+              badgeEl.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+              badgeEl.style.color = '#10b981';
               badgeEl.innerHTML = '<span>🛡️ 98% Segura</span>';
             }
           }
@@ -3172,11 +3350,29 @@
 
     setupSyncEvents() {
       syncBus.on('SWARM_ESCALATED_CRITICAL', ({ incident }) => {
-        sounds.playCriticalAlarm();
-        sounds.speakAlert('Alerta comunitaria: Peligro confirmado en tu cuadrante.');
-        this.showToast(`🚨 ¡PELIGRO ENJAMBRE CONFIRMADO! (${incident.reportCount} reportes)`, 'critical');
+        const eventTime = incident.reactivatedAt || incident.updatedAt || incident.createdAt || Date.now();
+        const shouldNotify = swarmEngine.shouldNotifyAlert(incident.id, eventTime);
+        if (shouldNotify) {
+          sounds.playCriticalAlarm();
+          sounds.speakAlert('Alerta comunitaria: Peligro confirmado en tu cuadrante.');
+          this.showToast(`🚨 ¡PELIGRO ENJAMBRE CONFIRMADO! (${incident.reportCount} reportes)`, 'critical');
+          swarmEngine.recordAlertNotified(incident.id, eventTime);
+        }
         this.renderFeed();
         this.updateTrustUI();
+        this.updateFloatingIncidentCard();
+      });
+
+      syncBus.on('NEW_PROBE_ALERT', ({ incident }) => {
+        const eventTime = incident.createdAt || Date.now();
+        const shouldNotify = swarmEngine.shouldNotifyAlert(incident.id, eventTime);
+        if (shouldNotify) {
+          sounds.playWarningPing();
+          this.showToast(`⚠️ Radar Preventivo: Alerta reportada en tu cuadrante`, 'warning');
+          swarmEngine.recordAlertNotified(incident.id, eventTime);
+        }
+        this.renderFeed();
+        this.updateFloatingIncidentCard();
       });
 
       syncBus.on('UNIT_DISPATCHED', ({ incident }) => {
@@ -3196,28 +3392,25 @@
       syncBus.on('COMMUNITY_BROADCAST', (bc) => {
         if (bc.active === false) return;
 
+        const eventTime = bc.timestamp || Date.now();
+        const shouldNotify = swarmEngine.shouldNotifyAlert(bc.id, eventTime);
+        if (!shouldNotify) return;
+
         // Calculate distance if coordinates are present
         let isWithinRadius = true;
         let distanceM = 0;
         if (bc.centerLat && bc.centerLng && this.userCoords) {
-          const R = 6371e3;
-          const phi1 = this.userCoords.lat * Math.PI / 180;
-          const phi2 = bc.centerLat * Math.PI / 180;
-          const deltaPhi = (bc.centerLat - this.userCoords.lat) * Math.PI / 180;
-          const deltaLambda = (bc.centerLng - this.userCoords.lng) * Math.PI / 180;
-          const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-                    Math.cos(phi1) * Math.cos(phi2) *
-                    Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-          distanceM = Math.round(R * c);
-
-          const alertRadius = bc.radiusMeters || 50;
+          const dist = swarmEngine.calculateDistanceMeters(this.userCoords.lat, this.userCoords.lng, bc.centerLat, bc.centerLng);
+          distanceM = Math.round(dist);
+          const alertRadius = bc.radiusMeters || 1000;
           if (distanceM > alertRadius) {
             isWithinRadius = false;
           }
         }
 
-        // Strictly alert only users within <= 50m of the alert zone
+        swarmEngine.recordAlertNotified(bc.id, eventTime);
+
+        // Strictly alert only users within <= alert radius
         if (!isWithinRadius) {
           this.showToast(`📢 Alerta en cuadrante (${distanceM}m): ${bc.title}`, 'info');
           return;
@@ -3248,7 +3441,17 @@
     handleGeofence(threat) {
       const banner = document.getElementById('geofence-warning-banner');
       if (!banner) return;
-      if (threat) {
+      if (threat && threat.incident) {
+        // Check if user already dismissed this incident's geofence banner in this session
+        try {
+          const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('beja_dismissed_geofence_v1') : null;
+          const dismissed = raw ? JSON.parse(raw) : [];
+          if (dismissed.includes(threat.incident.id)) {
+            banner.classList.add('hidden');
+            return;
+          }
+        } catch (e) {}
+
         const cat = INCIDENT_CATEGORIES[threat.incident.category] || INCIDENT_CATEGORIES.FIGHT;
         const isCrit = threat.incident.status === INCIDENT_STATES.CRITICAL_SWARM;
         banner.classList.remove('hidden');
@@ -3266,6 +3469,14 @@
         banner.querySelector('#btn-dismiss-geofence')?.addEventListener('click', (e) => {
           e.stopPropagation();
           banner.classList.add('hidden');
+          try {
+            const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('beja_dismissed_geofence_v1') : null;
+            const set = raw ? JSON.parse(raw) : [];
+            if (!set.includes(threat.incident.id)) {
+              set.push(threat.incident.id);
+              sessionStorage.setItem('beja_dismissed_geofence_v1', JSON.stringify(set));
+            }
+          } catch (err) {}
         });
       } else {
         banner.classList.add('hidden');
@@ -3301,7 +3512,7 @@
                 <div class="card-info">
                   <div class="card-top">
                     <span class="card-title">${cat.name}</span>
-                    <span class="card-badge ${isCrit ? 'badge-critical' : 'badge-warning'}">${isCrit ? '🚨 Enjambre Crítico' : '🟡 Sondeo'}</span>
+                    <span class="card-badge ${isCrit ? 'badge-critical' : 'badge-warning'}">${isCrit ? '🚨 Enjambre Crítico' : (inc.coolingDown ? '🟡 Atención Preventiva' : '🟡 Sondeo')}</span>
                   </div>
                   <p class="card-sub">
                     ${distM !== null ? `📍 A ${distM}m en tu zona &bull; ` : ''}
