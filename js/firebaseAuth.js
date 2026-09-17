@@ -39,12 +39,13 @@
 
           this.auth.onAuthStateChanged((firebaseUser) => {
             if (firebaseUser) {
+              const isSuper = firebaseUser.email && firebaseUser.email.toLowerCase() === this.SUPER_ADMIN_EMAIL.toLowerCase();
               const userProfile = {
                 uid: firebaseUser.uid,
                 email: firebaseUser.email,
-                displayName: firebaseUser.displayName || firebaseUser.email.split('@')[0],
+                displayName: firebaseUser.displayName || (isSuper ? 'GABY OLARTE (SUPER ADMIN)' : firebaseUser.email.split('@')[0]),
                 photoURL: firebaseUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${firebaseUser.uid}`,
-                role: 'citizen',
+                role: isSuper ? 'admin' : 'citizen',
                 trustScore: 100,
                 verifiedReports: 0,
                 validationsGiven: 0,
@@ -52,9 +53,8 @@
                 lastLoginAt: Date.now()
               };
               this.setCurrentUser(userProfile);
-            } else {
-              this.setCurrentUser(null);
             }
+            // Preserves local session (localStorage) when Firebase cloud user is null
           });
         } catch (err) {
           console.warn('Firebase Auth error:', err);

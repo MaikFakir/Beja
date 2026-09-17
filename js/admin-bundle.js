@@ -784,16 +784,28 @@
 
       const initialDirectory = [
         {
-          uid: 'user_admin_01',
-          email: 'central.despacho@colmena.org',
-          displayName: 'CENTRAL COMANDO METROPOLITANO',
-          photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=admin',
+          uid: 'user_admin_super',
+          email: 'Gabyolarte2017@gmail.com',
+          displayName: 'GABY OLARTE (SUPER ADMIN)',
+          photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=Gaby',
           role: 'admin',
           trustScore: 100,
-          verifiedReports: 24,
-          validationsGiven: 48,
+          verifiedReports: 35,
+          validationsGiven: 70,
           status: 'active',
           createdAt: Date.now() - 86400000 * 30
+        },
+        {
+          uid: 'user_patrol_07',
+          email: 'patrullero.cuadrante07@gmail.com',
+          displayName: 'PATRULLERO CUADRANTE 07',
+          photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=patrullero',
+          role: 'patrol',
+          trustScore: 98,
+          verifiedReports: 14,
+          validationsGiven: 32,
+          status: 'active',
+          createdAt: Date.now() - 86400000 * 20
         },
         {
           uid: 'user_cit_02',
@@ -806,18 +818,6 @@
           validationsGiven: 19,
           status: 'active',
           createdAt: Date.now() - 86400000 * 12
-        },
-        {
-          uid: 'user_cit_03',
-          email: 'carlos.rodriguez@gmail.com',
-          displayName: 'CARLOS RODRÍGUEZ',
-          photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=carlos',
-          role: 'citizen',
-          trustScore: 78,
-          verifiedReports: 2,
-          validationsGiven: 8,
-          status: 'active',
-          createdAt: Date.now() - 86400000 * 5
         }
       ];
       try {
@@ -873,7 +873,12 @@
 
     setupAuthorityGate() {
       const gateModal = document.getElementById('admin-access-gate-modal');
-      const btnGateLogin = document.getElementById('btn-gate-login-authority');
+      const btnSuperAdmin = document.getElementById('btn-gate-super-admin');
+      const btnPatrol = document.getElementById('btn-gate-patrol');
+      const btnToggleCustom = document.getElementById('btn-gate-toggle-custom');
+      const customDrawer = document.getElementById('gate-custom-auth-drawer');
+      const customInput = document.getElementById('gate-custom-email-input');
+      const btnCustomEnter = document.getElementById('btn-gate-custom-enter');
       const headerPill = document.getElementById('admin-user-header-pill');
 
       const evaluateAuth = (user) => {
@@ -918,9 +923,59 @@
         }
       };
 
-      btnGateLogin?.addEventListener('click', () => {
+      // 1-Tap Super Admin Entry
+      btnSuperAdmin?.addEventListener('click', () => {
+        sounds.playDispatchChime();
+        const user = window.firebaseAuth 
+          ? window.firebaseAuth.loginWithEmail('Gabyolarte2017@gmail.com')
+          : { email: 'Gabyolarte2017@gmail.com', role: 'admin', displayName: 'GABY OLARTE (SUPER ADMIN)', photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=Gaby' };
+        this.unlockC2(user);
+      });
+
+      // 1-Tap Patrol Entry
+      btnPatrol?.addEventListener('click', () => {
+        sounds.playDispatchChime();
+        const user = window.firebaseAuth 
+          ? window.firebaseAuth.loginWithEmail('patrullero.cuadrante07@gmail.com')
+          : { email: 'patrullero.cuadrante07@gmail.com', role: 'patrol', displayName: 'PATRULLERO CUADRANTE 07', photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=patrullero' };
+        this.unlockC2(user);
+      });
+
+      // Toggle Custom Drawer
+      btnToggleCustom?.addEventListener('click', (e) => {
+        e.preventDefault();
         sounds.playClick();
-        this.promptAuthorityLogin();
+        if (customDrawer) {
+          customDrawer.classList.toggle('hidden');
+          if (!customDrawer.classList.contains('hidden') && customInput) customInput.focus();
+        }
+      });
+
+      const handleCustomLogin = () => {
+        const email = customInput ? customInput.value.trim() : '';
+        if (email && email.includes('@')) {
+          sounds.playDispatchChime();
+          const user = window.firebaseAuth ? window.firebaseAuth.loginWithEmail(email) : null;
+          if (user && (user.role === 'admin' || user.role === 'patrol')) {
+            this.unlockC2(user);
+          } else {
+            alert('⚠️ El correo (' + email + ') no tiene permisos de Autoridad/Admin. Usa Gabyolarte2017@gmail.com o un correo de patrullero.');
+          }
+        } else {
+          alert('Ingresa un correo electrónico válido.');
+        }
+      };
+
+      btnCustomEnter?.addEventListener('click', (e) => {
+        e.preventDefault();
+        handleCustomLogin();
+      });
+
+      customInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleCustomLogin();
+        }
       });
 
       if (window.firebaseAuth) {
@@ -931,15 +986,29 @@
       }
     }
 
+    unlockC2(user) {
+      const gateModal = document.getElementById('admin-access-gate-modal');
+      if (gateModal) gateModal.classList.add('hidden');
+      this.setupAuthorityGate();
+      if (this.tacticalMap && this.tacticalMap.map) {
+        setTimeout(() => {
+          this.tacticalMap.map.invalidateSize();
+          this.tacticalMap.renderActiveIncidents();
+          this.tacticalMap.renderHeatmap();
+        }, 150);
+      }
+      this.renderMetrics();
+      this.renderIncidentQueue();
+      this.renderUsersDirectory();
+    }
+
     async promptAuthorityLogin() {
       if (window.firebaseAuth && window.firebaseAuth.openGoogleChooser) {
         const user = await window.firebaseAuth.openGoogleChooser();
         if (user) {
           if (user.role === 'admin' || user.role === 'patrol') {
             sounds.playDispatchChime();
-            const gate = document.getElementById('admin-access-gate-modal');
-            if (gate) gate.classList.add('hidden');
-            this.setupAuthorityGate();
+            this.unlockC2(user);
           } else {
             sounds.playWarningPing();
             alert('⚠️ La cuenta (' + user.email + ') tiene rol de CIUDADANO y no tiene permisos para despachar unidades ni moderar en el Centro C2. Por favor selecciona una cuenta de Autoridad (Gaby Olarte o Patrullero).');

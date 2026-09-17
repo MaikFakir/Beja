@@ -427,10 +427,26 @@
         </div>
       </div>
       <div style="display: flex; flex-direction: column; gap: 10px;">
-        <button class="tactical-btn" id="btn-gate-login-authority" style="background: linear-gradient(135deg, #ef4444, #b91c1c); color: #fff; padding: 12px; font-weight: 700; font-size: 0.92rem; border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);">
-          🔑 Iniciar Sesión como Autoridad / Admin
+        <button class="tactical-btn" id="btn-gate-super-admin" style="background: linear-gradient(135deg, #ef4444, #b91c1c); color: #fff; padding: 12px; font-weight: 800; font-size: 0.95rem; border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 0 20px rgba(239, 68, 68, 0.4); display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <span>👑</span> Acceder como Gaby Olarte (Super Admin)
         </button>
-        <a href="index.html" class="tactical-btn" id="btn-gate-citizen-return" style="text-align: center; text-decoration: none; padding: 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); color: #94a3b8; font-size: 0.85rem;">
+
+        <button class="tactical-btn" id="btn-gate-patrol" style="background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; color: #93c5fd; padding: 11px; font-weight: 700; font-size: 0.9rem; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <span>🚓</span> Acceder como Patrullero (Cuadrante 07)
+        </button>
+
+        <div style="border-top: 1px solid rgba(255,255,255,0.08); margin: 4px 0;"></div>
+
+        <button class="tactical-btn" id="btn-gate-toggle-custom" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: #cbd5e1; padding: 9px; font-size: 0.82rem; border-radius: 8px; cursor: pointer;">
+          ➕ Usar otro correo de Autoridad
+        </button>
+
+        <div id="gate-custom-auth-drawer" class="hidden" style="display: flex; gap: 8px; margin-top: 4px;">
+          <input type="email" id="gate-custom-email-input" placeholder="tu_correo_oficial@gmail.com" class="tactical-input" style="flex: 1; font-size: 0.85rem; padding: 8px 12px; background: #0c1220;">
+          <button id="btn-gate-custom-enter" class="tactical-btn" style="background: #ef4444; color: #fff; padding: 8px 14px; font-weight: 700; border-radius: 8px;">Entrar ➔</button>
+        </div>
+
+        <a href="index.html" class="tactical-btn" id="btn-gate-citizen-return" style="text-align: center; text-decoration: none; padding: 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); color: #94a3b8; font-size: 0.84rem; margin-top: 4px;">
           📱 Volver a la App Ciudadana
         </a>
       </div>
