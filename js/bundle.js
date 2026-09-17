@@ -293,6 +293,14 @@
   const syncBus = new SyncBus();
 
   // --- 3. DYNAMIC TRUST & REPUTATION ENGINE ---
+  function getTrustLevelLabel(score) {
+    if (score >= 95) return '👑 Líder de Colmena';
+    if (score >= 85) return '🔵 Centinela de Cuadrante';
+    if (score >= 70) return '🟢 Guardián Activo';
+    if (score >= 45) return '🟡 Ciudadano Iniciado';
+    return '⚠️ En Observación';
+  }
+
   class TrustEngine {
     constructor() {
       this.STORAGE_KEY = 'colmena_user_trust_v2';
@@ -323,12 +331,7 @@
 
     awardPoints(delta, reason) {
       this.state.score = Math.max(0, Math.min(100, this.state.score + delta));
-      
-      if (this.state.score >= 95) this.state.level = '👑 Líder de Colmena';
-      else if (this.state.score >= 85) this.state.level = '🔵 Centinela de Cuadrante';
-      else if (this.state.score >= 70) this.state.level = '🟢 Guardián Activo';
-      else if (this.state.score >= 45) this.state.level = '🟡 Ciudadano Iniciado';
-      else this.state.level = '⚠️ En Observación';
+      this.state.level = getTrustLevelLabel(this.state.score);
 
       this.state.history.unshift({
         timestamp: Date.now(),
@@ -339,6 +342,14 @@
       if (this.state.history.length > 10) this.state.history.pop();
 
       this.save();
+
+      // Sincroniza la reputación ganada en esta sesión con el registro de la cuenta (lo que ve/ajusta el panel de administración)
+      try {
+        if (window.firebaseAuth && window.firebaseAuth.currentUser && typeof window.firebaseAuth.adjustUserReputation === 'function') {
+          window.firebaseAuth.adjustUserReputation(window.firebaseAuth.currentUser.uid, delta);
+        }
+      } catch (e) {}
+
       syncBus.emit('TRUST_UPDATED', { trust: this.state, delta, reason });
       return this.state;
     }
@@ -385,6 +396,9 @@
       this.COOLING_YELLOW_DURATION_MS = 20 * 60 * 1000; // 20 minutes yellow preventive cooling
       this.FRESH_ALERT_WINDOW_MS = 3 * 60 * 1000; // 3 minutes freshness window for audio/toasts
       this.SESSION_NOTIFIED_KEY = 'beja_notified_alerts_session_v1';
+
+      // Umbral de peso acumulado de consenso necesario para escalar una alerta a Enjambre Crítico (ROJO)
+      this.CONSENSUS_ESCALATION_THRESHOLD = 1.0;
 
       // Purge legacy v1 mock clutter from user browser
       try {
@@ -458,9 +472,23 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    reportIncident({ lat, lng, category = 'FIGHT', note = '', userId = null }) {
+    /**
+     * Peso de consenso que aporta un reporte/testimonio según la reputación del ciudadano.
+     * Alta reputación: una sola alerta puede activar el enjambre crítico de inmediato.
+     * Reputación media: se necesitan varios ciudadanos medios coincidiendo en la misma zona.
+     * Baja reputación (usuario nuevo): casi no suma, así reporte varias veces.
+     */
+    getConsensusWeight(trustScore) {
+      const score = (typeof trustScore === 'number' && !isNaN(trustScore)) ? trustScore : 50;
+      if (score >= 85) return 1.0;
+      if (score >= 45) return 0.5;
+      return 0.15;
+    }
+
+    reportIncident({ lat, lng, category = 'FIGHT', note = '', userId = null, userTrust = null }) {
       userId = userId || syncBus.getSenderId();
       const now = Date.now();
+      const weight = this.getConsensusWeight(userTrust);
       this.incidents = this.loadIncidents();
 
       let matchingCluster = this.incidents.find(inc => {
@@ -473,15 +501,19 @@
 
       if (matchingCluster) {
         const alreadyReported = matchingCluster.reporters.some(r => r.userId === userId);
-        matchingCluster.reporters.push({ userId, timestamp: now, note });
+        const isDifferentUser = !alreadyReported;
+
+        // Un mismo ciudadano reportando varias veces no debe inflar el consenso: solo se contabiliza su primer reporte en esta zona.
+        if (isDifferentUser) {
+          matchingCluster.reporters.push({ userId, timestamp: now, note, weight });
+          matchingCluster.reportCount = matchingCluster.reporters.length;
+          matchingCluster.consensusWeight = matchingCluster.reporters.reduce((sum, r) => sum + (typeof r.weight === 'number' ? r.weight : this.getConsensusWeight(null)), 0);
+        }
         matchingCluster.updatedAt = now;
-        matchingCluster.reportCount = matchingCluster.reporters.length;
 
         // Progressive escalation / Reactivation:
-        // If incident was in PROBING (either initial report, or degraded yellow from RED)
-        // and another distinct user reports, escalate/reactivate to CRITICAL_SWARM (ROJO)
-        const isDifferentUser = !alreadyReported;
-        if (matchingCluster.status === INCIDENT_STATES.PROBING && isDifferentUser) {
+        // Escala/reactiva a CRITICAL_SWARM (ROJO) cuando el peso de consenso acumulado (ponderado por reputación) cruza el umbral.
+        if (matchingCluster.status === INCIDENT_STATES.PROBING && isDifferentUser && matchingCluster.consensusWeight >= this.CONSENSUS_ESCALATION_THRESHOLD) {
           matchingCluster.status = INCIDENT_STATES.CRITICAL_SWARM;
           matchingCluster.criticalStartedAt = now;
           matchingCluster.coolingDown = false;
@@ -494,21 +526,28 @@
         }
         resultIncident = matchingCluster;
       } else {
+        // Un ciudadano de muy alta reputación puede activar la alerta crítica de inmediato, en solitario.
+        const startsCritical = weight >= this.CONSENSUS_ESCALATION_THRESHOLD;
         resultIncident = {
           id: 'inc_' + now + '_' + Math.random().toString(36).substr(2, 4),
           lat,
           lng,
           category,
-          status: INCIDENT_STATES.PROBING,
+          status: startsCritical ? INCIDENT_STATES.CRITICAL_SWARM : INCIDENT_STATES.PROBING,
           createdAt: now,
           updatedAt: now,
-          criticalStartedAt: null,
+          criticalStartedAt: startsCritical ? now : null,
           coolingDown: false,
           reportCount: 1,
+          consensusWeight: weight,
           creatorId: userId,
-          reporters: [{ userId, timestamp: now, note }],
+          reporters: [{ userId, timestamp: now, note, weight }],
           assignedUnit: null
         };
+        if (startsCritical) {
+          isEscalated = true;
+          trustEngine.recordVerifiedReport();
+        }
         this.incidents.unshift(resultIncident);
       }
 
@@ -534,8 +573,9 @@
       return { incident: resultIncident, isEscalated };
     }
 
-    voteIncidentVerdict(incidentId, isReal, userCoords = null) {
+    voteIncidentVerdict(incidentId, isReal, userCoords = null, userTrust = null) {
       const myId = syncBus.getSenderId();
+      const weight = this.getConsensusWeight(userTrust);
       this.incidents = this.loadIncidents();
       const inc = this.incidents.find(i => i.id === incidentId);
       if (!inc) return { success: false, reason: 'NOT_FOUND' };
@@ -563,14 +603,16 @@
           userId: myId,
           timestamp: Date.now(),
           verdict: 'REAL',
-          note: 'Confirmado como REAL por testigo presencial en la calle.'
+          note: 'Confirmado como REAL por testigo presencial en la calle.',
+          weight
         });
         inc.reportCount = inc.reporters.length;
         inc.updatedAt = Date.now();
+        inc.consensusWeight = inc.reporters.reduce((sum, r) => sum + (typeof r.weight === 'number' ? r.weight : this.getConsensusWeight(null)), 0);
 
         let isEscalated = false;
-        // Reactivate/Escalate to RED if status is PROBING (yellow cooling or initial probe)
-        if (inc.status === INCIDENT_STATES.PROBING) {
+        // Reactivate/Escalate a ROJO si el peso de consenso (ponderado por reputación) cruza el umbral
+        if (inc.status === INCIDENT_STATES.PROBING && inc.consensusWeight >= this.CONSENSUS_ESCALATION_THRESHOLD) {
           inc.status = INCIDENT_STATES.CRITICAL_SWARM;
           inc.criticalStartedAt = Date.now();
           inc.coolingDown = false;
@@ -1055,23 +1097,38 @@
       });
     }
 
-    getDismissedGeofenceIds() {
+    getDismissedGeofenceMap() {
       try {
-        const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('beja_dismissed_geofence_v1') : null;
-        return raw ? JSON.parse(raw) : [];
+        const raw = localStorage.getItem('beja_dismissed_geofence_v2');
+        return raw ? JSON.parse(raw) : {};
       } catch (e) {
-        return [];
+        return {};
       }
+    }
+
+    // Recuerda el cierre del aviso de forma persistente (no se resetea al reabrir la app),
+    // pero solo mientras la alerta no cambie: si luego se reactiva/reescala, debe volver a avisar.
+    dismissGeofenceBanner(incidentId) {
+      try {
+        const map = this.getDismissedGeofenceMap();
+        map[incidentId] = Date.now();
+        localStorage.setItem('beja_dismissed_geofence_v2', JSON.stringify(map));
+      } catch (e) {}
     }
 
     checkGeofence() {
       const incidents = swarmEngine.loadIncidents();
       let nearest = null, minDist = Infinity;
-      const dismissedIds = this.getDismissedGeofenceIds();
+      const dismissedMap = this.getDismissedGeofenceMap();
 
       incidents.forEach(inc => {
         if (inc.status === INCIDENT_STATES.RESOLVED || inc.status === INCIDENT_STATES.FALSE_ALARM) return;
-        if (dismissedIds.includes(inc.id)) return;
+
+        // Si ya se cerró este aviso, se mantiene oculto solo hasta que ocurra algo genuinamente nuevo
+        // (reactivación/re-escalada por otro reporte). Si el evento es más reciente que el cierre, vuelve a avisar.
+        const eventTime = inc.reactivatedAt || inc.criticalStartedAt || inc.updatedAt || inc.createdAt || 0;
+        const dismissedAt = dismissedMap[inc.id];
+        if (dismissedAt && dismissedAt >= eventTime) return;
 
         // ONLY trigger geofence warning banner for active ROJO (CRITICAL_SWARM / DISPATCHED)
         // or a brand-new PROBING probe (<= 5 min). Degraded yellow cooling alerts do NOT trigger aggressive banners!
@@ -1811,16 +1868,19 @@
           this.auth.onAuthStateChanged((firebaseUser) => {
             if (firebaseUser) {
               const isSuper = firebaseUser.email && firebaseUser.email.toLowerCase() === this.SUPER_ADMIN_EMAIL.toLowerCase();
+              const directory = this.getUsersList();
+              const existing = directory.find(u => u.uid === firebaseUser.uid || (u.email && firebaseUser.email && u.email.toLowerCase() === firebaseUser.email.toLowerCase()));
               const userProfile = {
                 uid: firebaseUser.uid,
                 email: firebaseUser.email,
                 displayName: firebaseUser.displayName || (isSuper ? 'GABY OLARTE (SUPER ADMIN)' : firebaseUser.email.split('@')[0]),
                 photoURL: firebaseUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${firebaseUser.uid}`,
-                role: isSuper ? 'admin' : 'citizen',
-                trustScore: 100,
-                verifiedReports: 0,
-                validationsGiven: 0,
-                status: 'active',
+                role: isSuper ? 'admin' : (existing && existing.role ? existing.role : 'citizen'),
+                // Usuario nuevo = reputación baja/inicial; un usuario existente conserva lo que ya ganó (o lo que el admin le asignó)
+                trustScore: isSuper ? 100 : (existing ? (existing.trustScore ?? 40) : 40),
+                verifiedReports: existing ? (existing.verifiedReports || 0) : 0,
+                validationsGiven: existing ? (existing.validationsGiven || 0) : 0,
+                status: existing ? (existing.status || 'active') : 'active',
                 lastLoginAt: Date.now()
               };
               this.setCurrentUser(userProfile);
@@ -1833,7 +1893,7 @@
       }
     }
 
-    SUPER_ADMIN_EMAIL: 'gabyolarte2017@gmail.com',
+    SUPER_ADMIN_EMAIL = 'gabyolarte2017@gmail.com';
 
     async loginWithGoogle() {
       if (window.firebaseAuth && window.firebaseAuth.openGoogleChooser && window.firebaseAuth !== this) {
@@ -2027,7 +2087,8 @@
         displayName: existing ? existing.displayName : name,
         photoURL: existing && existing.photoURL ? existing.photoURL : `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanEmail}`,
         role: role,
-        trustScore: existing ? (existing.trustScore || 100) : 100,
+        // Usuario nuevo = reputación baja/inicial (debe ganarse la confianza); un usuario ya registrado conserva su puntaje
+        trustScore: isSuperAdmin ? 100 : (existing ? (existing.trustScore ?? 40) : 40),
         verifiedReports: existing ? (existing.verifiedReports || 0) : 0,
         validationsGiven: existing ? (existing.validationsGiven || 0) : 0,
         status: existing ? (existing.status || 'active') : 'active',
@@ -2209,7 +2270,6 @@
       try { this.setupTabs(); } catch (e) { console.error('setupTabs error:', e); }
       try { this.setupPanic(); } catch (e) { console.error('setupPanic error:', e); }
       try { this.setupRoutingControls(); } catch (e) { console.error('setupRoutingControls error:', e); }
-      try { this.setupSimulation(); } catch (e) { console.error('setupSimulation error:', e); }
       try { this.setupSyncEvents(); } catch (e) { console.error('setupSyncEvents error:', e); }
       try { this.updateTrustUI(); } catch (e) { console.error('updateTrustUI error:', e); }
       try { this.setupChat(); } catch (e) { console.error('setupChat error:', e); }
@@ -3017,7 +3077,8 @@
         note: note,
         userId: reporterUser.uid,
         userEmail: reporterUser.email,
-        userName: reporterUser.displayName
+        userName: reporterUser.displayName,
+        userTrust: reporterUser.trustScore
       });
 
       // Save to Firebase Cloud
@@ -3026,7 +3087,7 @@
       if (isEscalated) {
         sounds.playCriticalAlarm();
         sounds.speakAlert('Alerta de colmena confirmada. Zona roja activada.');
-        this.showToast('🚨 ¡CONSENSO DE ENJAMBRE! 2+ ciudadanos confirmaron la alerta. (+10 pts)', 'critical');
+        this.showToast('🚨 ¡CONSENSO DE ENJAMBRE! Reputación de la comunidad confirmó la alerta. (+10 pts)', 'critical');
       } else {
         sounds.playWarningPing();
         this.showToast('📡 Alerta de sondeo enviada. Esperando confirmación de vecinos...', 'warning');
@@ -3328,26 +3389,6 @@
       }
     }
 
-    setupSimulation() {
-      document.getElementById('btn-sim-fight')?.addEventListener('click', () => {
-        this.showToast('⚔️ Simulando riña con 3 ciudadanos virtuales...', 'warning');
-        simulator.runStreetFightScenario(this.userCoords);
-      });
-      document.getElementById('btn-sim-robbery')?.addEventListener('click', () => {
-        this.showToast('🚨 Simulando asalto...', 'critical');
-        simulator.runRobberyScenario(this.userCoords);
-      });
-      document.getElementById('btn-sim-false')?.addEventListener('click', () => {
-        this.showToast('🟡 Reporte individual aislado...', 'warning');
-        simulator.runFalseAlarmScenario(this.userCoords);
-      });
-      document.getElementById('btn-sim-reset')?.addEventListener('click', () => {
-        sounds.playClick();
-        simulator.resetAll();
-        this.showToast('🧹 Mapa y Reputación reiniciados.', 'info');
-      });
-    }
-
     setupSyncEvents() {
       syncBus.on('SWARM_ESCALATED_CRITICAL', ({ incident }) => {
         const eventTime = incident.reactivatedAt || incident.updatedAt || incident.createdAt || Date.now();
@@ -3442,16 +3483,8 @@
       const banner = document.getElementById('geofence-warning-banner');
       if (!banner) return;
       if (threat && threat.incident) {
-        // Check if user already dismissed this incident's geofence banner in this session
-        try {
-          const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('beja_dismissed_geofence_v1') : null;
-          const dismissed = raw ? JSON.parse(raw) : [];
-          if (dismissed.includes(threat.incident.id)) {
-            banner.classList.add('hidden');
-            return;
-          }
-        } catch (e) {}
-
+        // La deduplicación por "ya lo cerré" vive en RiskMap.checkGeofence() (persistente y consciente de reactivaciones);
+        // si llegamos aquí, es porque de verdad hay que mostrar el aviso.
         const cat = INCIDENT_CATEGORIES[threat.incident.category] || INCIDENT_CATEGORIES.FIGHT;
         const isCrit = threat.incident.status === INCIDENT_STATES.CRITICAL_SWARM;
         banner.classList.remove('hidden');
@@ -3469,14 +3502,7 @@
         banner.querySelector('#btn-dismiss-geofence')?.addEventListener('click', (e) => {
           e.stopPropagation();
           banner.classList.add('hidden');
-          try {
-            const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('beja_dismissed_geofence_v1') : null;
-            const set = raw ? JSON.parse(raw) : [];
-            if (!set.includes(threat.incident.id)) {
-              set.push(threat.incident.id);
-              sessionStorage.setItem('beja_dismissed_geofence_v1', JSON.stringify(set));
-            }
-          } catch (err) {}
+          if (this.riskMap) this.riskMap.dismissGeofenceBanner(threat.incident.id);
         });
       } else {
         banner.classList.add('hidden');
@@ -3563,7 +3589,7 @@
         document.getElementById('marketing-login-modal')?.classList.remove('hidden');
         return;
       }
-      const res = swarmEngine.voteIncidentVerdict(incidentId, isReal, this.userCoords);
+      const res = swarmEngine.voteIncidentVerdict(incidentId, isReal, this.userCoords, this.currentUser.trustScore);
       if (res.success) {
         if (isReal) {
           sounds.playDispatchChime();
@@ -3608,6 +3634,11 @@
 
     updateTrustUI() {
       const trust = trustEngine.state;
+      // La reputación mostrada/usada para consenso es la de la CUENTA (la misma que ve y ajusta el panel C2),
+      // no solo el contador local de gamificación de esta sesión.
+      const score = (this.currentUser && typeof this.currentUser.trustScore === 'number') ? this.currentUser.trustScore : trust.score;
+      const level = getTrustLevelLabel(score);
+
       const scoreNum = document.getElementById('trust-score-num');
       const scoreLevel = document.getElementById('trust-score-level');
       const verifiedCount = document.getElementById('trust-verified-count');
@@ -3616,15 +3647,15 @@
       const badgeCircle = document.getElementById('trust-badge-circle');
       const eventsList = document.getElementById('reputation-events-list');
 
-      if (scoreNum) scoreNum.textContent = trust.score;
-      if (scoreLevel) scoreLevel.textContent = trust.level;
+      if (scoreNum) scoreNum.textContent = score;
+      if (scoreLevel) scoreLevel.textContent = level;
       if (verifiedCount) verifiedCount.textContent = `✅ ${trust.verifiedReports} alerta(s) validadas`;
       if (validationVotes) validationVotes.textContent = `🤝 ${trust.validationsGiven} aporte(s) como testigo`;
-      if (quickTrust) quickTrust.textContent = `${trust.score}/100`;
+      if (quickTrust) quickTrust.textContent = `${score}/100`;
 
       if (badgeCircle) {
-        if (trust.score >= 85) badgeCircle.style.borderColor = 'var(--color-safe)';
-        else if (trust.score >= 50) badgeCircle.style.borderColor = 'var(--color-warning)';
+        if (score >= 85) badgeCircle.style.borderColor = 'var(--color-safe)';
+        else if (score >= 50) badgeCircle.style.borderColor = 'var(--color-warning)';
         else badgeCircle.style.borderColor = 'var(--color-critical)';
       }
 

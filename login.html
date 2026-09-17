@@ -282,10 +282,11 @@
       const performEmailLogin = () => {
         const email = inputEmail ? inputEmail.value.trim() : '';
         if (email && email.includes('@')) {
-          if (window.firebaseAuth) {
-            window.firebaseAuth.loginWithEmail(email);
+          const user = window.firebaseAuth ? window.firebaseAuth.loginWithEmail(email) : { blocked: false };
+          if (user) {
+            window.location.href = 'index.html';
           }
-          window.location.href = 'index.html';
+          // Si el login fue bloqueado (cuenta inhabilitada/suspendida), firebaseAuth ya mostró el motivo.
         } else {
           alert('Por favor ingresa un correo electrónico válido (ejemplo: vecino@gmail.com)');
         }

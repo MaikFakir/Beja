@@ -39,20 +39,7 @@
 
           this.auth.onAuthStateChanged((firebaseUser) => {
             if (firebaseUser) {
-              const isSuper = firebaseUser.email && firebaseUser.email.toLowerCase() === this.SUPER_ADMIN_EMAIL.toLowerCase();
-              const userProfile = {
-                uid: firebaseUser.uid,
-                email: firebaseUser.email,
-                displayName: firebaseUser.displayName || (isSuper ? 'GABY OLARTE (SUPER ADMIN)' : firebaseUser.email.split('@')[0]),
-                photoURL: firebaseUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${firebaseUser.uid}`,
-                role: isSuper ? 'admin' : 'citizen',
-                trustScore: 100,
-                verifiedReports: 0,
-                validationsGiven: 0,
-                status: 'active',
-                lastLoginAt: Date.now()
-              };
-              this.setCurrentUser(userProfile);
+              this.applyFirebaseUser(firebaseUser);
             }
             // Preserves local session (localStorage) when Firebase cloud user is null
           });
@@ -62,7 +49,63 @@
       }
     }
 
+    /**
+     * Bloquea el acceso a cuentas inhabilitadas o suspendidas (con la suspensión aún vigente).
+     * El Super Administrador nunca queda bloqueado.
+     */
+    checkAccountAccess(existing, isSuperAdmin) {
+      if (isSuperAdmin || !existing) return { blocked: false };
+      if (existing.status === 'disabled') {
+        return { blocked: true, reason: 'Tu cuenta fue inhabilitada por un administrador. Contacta a soporte si crees que esto es un error.' };
+      }
+      if (existing.status === 'suspended' && existing.suspendedUntil && existing.suspendedUntil > Date.now()) {
+        const untilStr = existing.suspendedUntil === Infinity ? 'de forma indefinida' : ('hasta ' + new Date(existing.suspendedUntil).toLocaleString());
+        return { blocked: true, reason: `Tu cuenta está suspendida ${untilStr}. Motivo: ${existing.suspendReason || 'moderación comunitaria'}.` };
+      }
+      return { blocked: false };
+    }
+
+    /**
+     * Construye/actualiza el perfil local a partir de un usuario real autenticado con Firebase
+     * (Google Sign-In). Respeta el bloqueo de cuentas inhabilitadas/suspendidas.
+     */
+    applyFirebaseUser(firebaseUser) {
+      const isSuper = firebaseUser.email && firebaseUser.email.toLowerCase() === this.SUPER_ADMIN_EMAIL.toLowerCase();
+      const directory = this.getUsersList();
+      const existing = directory.find(u => u.uid === firebaseUser.uid || (u.email && firebaseUser.email && u.email.toLowerCase() === firebaseUser.email.toLowerCase()));
+
+      const access = this.checkAccountAccess(existing, isSuper);
+      if (access.blocked) {
+        try { this.auth && this.auth.signOut(); } catch (e) {}
+        alert('🔒 Acceso denegado: ' + access.reason);
+        return null;
+      }
+
+      const userProfile = {
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        displayName: firebaseUser.displayName || (isSuper ? 'GABY OLARTE (SUPER ADMIN)' : firebaseUser.email.split('@')[0]),
+        photoURL: firebaseUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${firebaseUser.uid}`,
+        role: isSuper ? 'admin' : (existing && existing.role ? existing.role : 'citizen'),
+        // Usuario nuevo = reputación baja/inicial; un usuario existente conserva lo que ya ganó (o lo que el admin le asignó)
+        trustScore: isSuper ? 100 : (existing ? (existing.trustScore ?? 40) : 40),
+        verifiedReports: existing ? (existing.verifiedReports || 0) : 0,
+        validationsGiven: existing ? (existing.validationsGiven || 0) : 0,
+        status: existing ? (existing.status || 'active') : 'active',
+        lastLoginAt: Date.now()
+      };
+      this.setCurrentUser(userProfile);
+      return userProfile;
+    }
+
     async loginWithGoogle() {
+      // Firebase real configurado: inicio de sesión real de Google (ventana emergente oficial)
+      if (this.isConfigured && this.auth && window.firebase && window.firebase.auth) {
+        const provider = new window.firebase.auth.GoogleAuthProvider();
+        const result = await this.auth.signInWithPopup(provider);
+        return this.applyFirebaseUser(result.user);
+      }
+      // Firebase no configurado todavía: modo local/demo con selector de cuentas de prueba
       return this.openGoogleChooser();
     }
 
@@ -224,7 +267,7 @@
       return this.openGoogleChooser();
     }
 
-    SUPER_ADMIN_EMAIL: 'gabyolarte2017@gmail.com',
+    SUPER_ADMIN_EMAIL = 'gabyolarte2017@gmail.com';
 
     loginWithEmail(email) {
       if (!email || !email.includes('@')) return null;
@@ -249,7 +292,8 @@
         displayName: existing ? existing.displayName : name,
         photoURL: existing && existing.photoURL ? existing.photoURL : `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanEmail}`,
         role: role,
-        trustScore: existing ? (existing.trustScore || 100) : 100,
+        // Usuario nuevo = reputación baja/inicial (debe ganarse la confianza); un usuario ya registrado conserva su puntaje
+        trustScore: isSuperAdmin ? 100 : (existing ? (existing.trustScore ?? 40) : 40),
         verifiedReports: existing ? (existing.verifiedReports || 0) : 0,
         validationsGiven: existing ? (existing.validationsGiven || 0) : 0,
         status: existing ? (existing.status || 'active') : 'active',
@@ -264,6 +308,13 @@
         userObj.status = 'active';
         userObj.suspendedUntil = null;
         userObj.suspendReason = null;
+      }
+
+      // Cuentas inhabilitadas o con una suspensión aún vigente no pueden iniciar sesión
+      const access = this.checkAccountAccess(userObj, isSuperAdmin);
+      if (access.blocked) {
+        alert('🔒 Acceso denegado: ' + access.reason);
+        return null;
       }
 
       this.setCurrentUser(userObj);
@@ -489,7 +540,7 @@
       const users = this.getUsersList();
       const user = users.find(u => u.uid === uid);
       if (!user) return false;
-      user.trustScore = Math.max(0, Math.min(100, (user.trustScore || 75) + delta));
+      user.trustScore = Math.max(0, Math.min(100, (typeof user.trustScore === 'number' ? user.trustScore : 75) + delta));
       this.saveUsersList(users);
       if (this.currentUser && this.currentUser.uid === uid) {
         this.currentUser.trustScore = user.trustScore;

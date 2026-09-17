@@ -593,6 +593,12 @@ html, body.admin-body {
   border-color: var(--color-accent);
 }
 
+.sim-btn-pill.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
 /* Floating Mobile View Switcher Pill for Admin */
 .admin-mobile-view-toggle {
   display: none;

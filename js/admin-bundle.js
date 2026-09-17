@@ -266,8 +266,11 @@
       this.STORAGE_KEY_INCIDENTS = 'colmena_incidents_active_v2';
       this.STORAGE_KEY_HISTORY = 'colmena_incidents_history_v2';
 
+      this.CLUSTER_RADIUS_METERS = 50;
       this.CRITICAL_RED_DURATION_MS = 8 * 60 * 1000; // 8 minutes active red alarm
       this.COOLING_YELLOW_DURATION_MS = 20 * 60 * 1000; // 20 minutes yellow preventive cooling
+      // Umbral de peso acumulado de consenso necesario para escalar una alerta a Enjambre Crítico (ROJO)
+      this.CONSENSUS_ESCALATION_THRESHOLD = 1.0;
 
       try {
         localStorage.removeItem('colmena_incidents_active_v1');
@@ -468,8 +471,126 @@
       } catch (e) { return []; }
     }
 
-    sendBroadcastAlert({ title, message }) {
-      const bc = { id: 'bc_' + Date.now(), title, message, timestamp: Date.now() };
+    saveIncidents() {
+      try { localStorage.setItem(this.STORAGE_KEY_INCIDENTS, JSON.stringify(this.incidents)); } catch (e) {}
+    }
+
+    loadHistory() {
+      try {
+        const raw = localStorage.getItem(this.STORAGE_KEY_HISTORY);
+        if (raw) return JSON.parse(raw);
+      } catch (e) {}
+      return [];
+    }
+
+    saveHistory() {
+      try { localStorage.setItem(this.STORAGE_KEY_HISTORY, JSON.stringify(this.history)); } catch (e) {}
+    }
+
+    calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371e3;
+      const φ1 = (lat1 * Math.PI) / 180;
+      const φ2 = (lat2 * Math.PI) / 180;
+      const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+      const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+      const a = Math.sin(Δφ/2)*Math.sin(Δφ/2) + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)*Math.sin(Δλ/2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    /**
+     * Mismo criterio de peso por reputación que usa la app ciudadana: alta reputación pesa mucho
+     * (una sola alerta puede activar el enjambre crítico), reputación media necesita coincidencia
+     * de varios ciudadanos, y baja reputación casi no suma aunque reporte varias veces.
+     */
+    getConsensusWeight(trustScore) {
+      const score = (typeof trustScore === 'number' && !isNaN(trustScore)) ? trustScore : 50;
+      if (score >= 85) return 1.0;
+      if (score >= 45) return 0.5;
+      return 0.15;
+    }
+
+    /**
+     * Usado por los botones de simulación y el Inyector Masivo del panel de administración
+     * para generar/alimentar incidentes de prueba con el mismo motor de consenso que usan los ciudadanos.
+     */
+    reportIncident({ lat, lng, category = 'FIGHT', note = '', userId = null, userTrust = null, forceStatus = null }) {
+      userId = userId || ('admin_' + Math.random().toString(36).substring(2, 8));
+      const now = Date.now();
+      const weight = this.getConsensusWeight(userTrust);
+      this.incidents = this.loadIncidents();
+
+      let matchingCluster = this.incidents.find(inc => {
+        if (inc.status === INCIDENT_STATES.RESOLVED || inc.status === INCIDENT_STATES.FALSE_ALARM) return false;
+        return this.calculateDistanceMeters(lat, lng, inc.lat, inc.lng) <= this.CLUSTER_RADIUS_METERS;
+      });
+
+      let resultIncident;
+      let isEscalated = false;
+
+      if (matchingCluster) {
+        const alreadyReported = matchingCluster.reporters.some(r => r.userId === userId);
+        const isDifferentUser = !alreadyReported;
+        if (isDifferentUser) {
+          matchingCluster.reporters.push({ userId, timestamp: now, note, weight });
+          matchingCluster.reportCount = matchingCluster.reporters.length;
+          matchingCluster.consensusWeight = matchingCluster.reporters.reduce((sum, r) => sum + (typeof r.weight === 'number' ? r.weight : this.getConsensusWeight(null)), 0);
+        }
+        matchingCluster.updatedAt = now;
+
+        const meetsThreshold = forceStatus === INCIDENT_STATES.CRITICAL_SWARM || matchingCluster.consensusWeight >= this.CONSENSUS_ESCALATION_THRESHOLD;
+        if (matchingCluster.status === INCIDENT_STATES.PROBING && isDifferentUser && meetsThreshold) {
+          matchingCluster.status = INCIDENT_STATES.CRITICAL_SWARM;
+          matchingCluster.criticalStartedAt = now;
+          matchingCluster.coolingDown = false;
+          isEscalated = true;
+          if (matchingCluster.decayedFromCritical) {
+            matchingCluster.reactivatedAt = now;
+            matchingCluster.reactivatedBy = userId;
+          }
+        }
+        resultIncident = matchingCluster;
+      } else {
+        const startsCritical = forceStatus === INCIDENT_STATES.CRITICAL_SWARM || weight >= this.CONSENSUS_ESCALATION_THRESHOLD;
+        resultIncident = {
+          id: 'inc_' + now + '_' + Math.random().toString(36).substr(2, 4),
+          lat,
+          lng,
+          category,
+          status: startsCritical ? INCIDENT_STATES.CRITICAL_SWARM : INCIDENT_STATES.PROBING,
+          createdAt: now,
+          updatedAt: now,
+          criticalStartedAt: startsCritical ? now : null,
+          coolingDown: false,
+          reportCount: 1,
+          consensusWeight: weight,
+          creatorId: userId,
+          reporters: [{ userId, timestamp: now, note, weight }],
+          assignedUnit: null
+        };
+        if (startsCritical) isEscalated = true;
+        this.incidents.unshift(resultIncident);
+      }
+
+      this.history.push({
+        lat, lng, category,
+        weight: isEscalated ? 1.0 : 0.8,
+        timeOfDay: new Date().getHours() >= 19 || new Date().getHours() <= 5 ? 'NIGHT' : 'DAY',
+        timestamp: now
+      });
+      this.saveHistory();
+      this.saveIncidents();
+      syncBus.emit('INCIDENT_MUTATION', { incident: resultIncident, isEscalated });
+      if (isEscalated) {
+        syncBus.emit('SWARM_ESCALATED_CRITICAL', { incident: resultIncident });
+      } else if (resultIncident.reportCount === 1) {
+        syncBus.emit('NEW_PROBE_ALERT', { incident: resultIncident });
+      }
+
+      return { incident: resultIncident, isEscalated };
+    }
+
+    sendBroadcastAlert({ title, message, radiusMeters = null, centerLat = null, centerLng = null, active = true }) {
+      const bc = { id: 'bc_' + Date.now(), title, message, radiusMeters, centerLat, centerLng, active, timestamp: Date.now() };
       syncBus.emit('COMMUNITY_BROADCAST', bc);
       return bc;
     }
@@ -663,6 +784,44 @@
         }
       }, 1300);
     }
+
+    /**
+     * Modo Pincel: mientras está activo, clic (o clic+arrastre) sobre el mapa "pinta" alertas de
+     * prueba en las coordenadas tocadas, en lugar de mover el mapa. Pensado para mapear/calibrar
+     * zonas de riesgo rápidamente durante pruebas.
+     */
+    setPaintMode(active, onPaintPoint) {
+      if (!this.map) return;
+      this.paintModeActive = active;
+      const container = this.map.getContainer();
+
+      if (active) {
+        this.map.dragging.disable();
+        if (container) container.style.cursor = 'crosshair';
+        this._paintPointerDown = false;
+        this._paintLastPointAt = 0;
+        this._paintOnDown = (e) => { this._paintPointerDown = true; this._paintTick(e.latlng, onPaintPoint); };
+        this._paintOnMove = (e) => { if (this._paintPointerDown) this._paintTick(e.latlng, onPaintPoint); };
+        this._paintOnUp = () => { this._paintPointerDown = false; };
+        this.map.on('mousedown', this._paintOnDown);
+        this.map.on('mousemove', this._paintOnMove);
+        this.map.on('mouseup', this._paintOnUp);
+      } else {
+        this.map.dragging.enable();
+        if (container) container.style.cursor = '';
+        if (this._paintOnDown) this.map.off('mousedown', this._paintOnDown);
+        if (this._paintOnMove) this.map.off('mousemove', this._paintOnMove);
+        if (this._paintOnUp) this.map.off('mouseup', this._paintOnUp);
+        this._paintPointerDown = false;
+      }
+    }
+
+    _paintTick(latlng, onPaintPoint) {
+      const now = Date.now();
+      if (now - this._paintLastPointAt < 220) return; // separa los puntos de un mismo trazo para que se vea como pincelada
+      this._paintLastPointAt = now;
+      if (typeof onPaintPoint === 'function') onPaintPoint(latlng);
+    }
   }
 
   // --- 4.5. FIREBASE REAL-TIME CLOUD SYNCHRONIZER (PLAN SPARK) ---
@@ -725,8 +884,8 @@
 
     async sendBroadcastToCloud(broadcastData) {
       const bc = {
-        ...broadcastData,
         active: true,
+        ...broadcastData,
         timestamp: Date.now()
       };
       if (this.isConfigured && this.db) {
@@ -1332,10 +1491,15 @@
       document.getElementById('btn-send-broadcast')?.addEventListener('click', () => {
         const title = document.getElementById('broadcast-title-input').value.trim() || 'ALERTA OFICIAL';
         const msg = document.getElementById('broadcast-message-input').value.trim();
+        const radiusMeters = parseInt(document.getElementById('broadcast-radius-select')?.value || '1000', 10);
+        const active = (document.getElementById('broadcast-status-select')?.value || 'active') === 'active';
+        // Perímetro centrado en el punto que el despachador está viendo en el mapa táctico (o su GPS si el mapa aún no cargó)
+        const center = (this.tacticalMap && this.tacticalMap.map) ? this.tacticalMap.map.getCenter() : geoResolver.currentCoords;
         if (msg) {
           sounds.playCriticalAlarm();
-          swarmEngine.sendBroadcastAlert({ title, message: msg });
-          firebaseSync.sendBroadcastToCloud({ title, message: msg });
+          const payload = { title, message: msg, radiusMeters, centerLat: center.lat, centerLng: center.lng, active };
+          swarmEngine.sendBroadcastAlert(payload);
+          firebaseSync.sendBroadcastToCloud(payload);
           modal.classList.add('hidden');
         }
       });
@@ -1362,6 +1526,34 @@
         localStorage.removeItem(swarmEngine.STORAGE_KEY_INCIDENTS);
         localStorage.removeItem(swarmEngine.STORAGE_KEY_HISTORY);
         syncBus.emit('INCIDENT_MUTATION', { action: 'RESET' });
+      });
+
+      // Modo Pincel: pintar alertas de prueba tocando/arrastrando directamente sobre el mapa táctico
+      const paintBtn = document.getElementById('btn-toggle-paint-mode');
+      let paintModeOn = false;
+      const paintCategories = ['ROBBERY', 'FIGHT', 'SUSPICIOUS', 'VANDALISM', 'ACCIDENT', 'MEDICAL'];
+      paintBtn?.addEventListener('click', () => {
+        sounds.playClick();
+        paintModeOn = !paintModeOn;
+        paintBtn.classList.toggle('active', paintModeOn);
+        paintBtn.innerHTML = paintModeOn ? '✅ Pintando (clic para detener)' : '🖌️ Modo Pincel';
+        if (!this.tacticalMap) return;
+        this.tacticalMap.setPaintMode(paintModeOn, (latlng) => {
+          const category = paintCategories[Math.floor(Math.random() * paintCategories.length)];
+          const res = swarmEngine.reportIncident({
+            lat: latlng.lat,
+            lng: latlng.lng,
+            category,
+            note: 'Pincel de mapeo de zona (prueba de admin).',
+            userId: `paint_bot_${Math.floor(Math.random() * 90000 + 10000)}`,
+            forceStatus: INCIDENT_STATES.CRITICAL_SWARM
+          });
+          if (res && res.incident) firebaseSync.saveIncidentToCloud(res.incident);
+          this.renderIncidentQueue();
+          this.renderMetrics();
+          this.tacticalMap.renderActiveIncidents();
+          this.tacticalMap.renderHeatmap();
+        });
       });
     }
 
@@ -1501,7 +1693,7 @@
         const isPatrol = u.role === 'patrol';
         const isSuspended = u.status === 'suspended';
         const isDisabled = u.status === 'disabled';
-        const trustVal = u.trustScore || 75;
+        const trustVal = typeof u.trustScore === 'number' ? u.trustScore : 75;
 
         let roleLabel = '👤 Ciudadano';
         let roleBadgeClass = 'role-citizen';
@@ -1919,9 +2111,8 @@
 
     setupBulkGenerator() {
       const modal = document.getElementById('admin-bulk-modal');
-      const openBtn = document.getElementById('btn-bulk-incident-generator');
+      const openBtn = document.getElementById('btn-open-bulk-modal');
       const closeBtn = document.getElementById('btn-close-bulk');
-      const cancelBtn = document.getElementById('btn-cancel-bulk');
       const executeBtn = document.getElementById('btn-execute-bulk');
 
       openBtn?.addEventListener('click', () => {
@@ -1935,13 +2126,13 @@
       };
 
       closeBtn?.addEventListener('click', closeModal);
-      cancelBtn?.addEventListener('click', closeModal);
 
       executeBtn?.addEventListener('click', async () => {
         sounds.playWarningPing();
-        const count = parseInt(document.getElementById('bulk-count')?.value || '10', 10);
-        const category = document.getElementById('bulk-category')?.value || 'RANDOM';
-        const radiusM = parseInt(document.getElementById('bulk-radius')?.value || '500', 10);
+        const count = parseInt(document.getElementById('bulk-count-select')?.value || '5', 10);
+        const category = document.getElementById('bulk-category-select')?.value || 'MIXED';
+        const radiusM = parseInt(document.getElementById('bulk-radius-select')?.value || '500', 10);
+        const consensusLevel = document.getElementById('bulk-type-select')?.value || 'CRITICAL_SWARM';
 
         const center = this.tacticalMap?.map?.getCenter() || geoResolver.currentCoords;
         const availableCategories = ['ROBBERY', 'FIGHT', 'SUSPICIOUS', 'VANDALISM', 'ACCIDENT', 'MEDICAL'];
@@ -1952,7 +2143,7 @@
           const latJitter = (dist * Math.cos(angle)) / 111000;
           const lngJitter = (dist * Math.sin(angle)) / (111000 * Math.cos(center.lat * Math.PI / 180));
 
-          const chosenCat = (category === 'RANDOM')
+          const chosenCat = (category === 'MIXED')
             ? availableCategories[Math.floor(Math.random() * availableCategories.length)]
             : category;
 
@@ -1961,7 +2152,9 @@
             lng: center.lng + lngJitter,
             category: chosenCat,
             note: `Mapeo masivo enjambre #${i + 1}`,
-            userId: `sim_bot_${Math.floor(Math.random() * 9000 + 1000)}`
+            userId: `sim_bot_${Math.floor(Math.random() * 9000 + 1000)}`,
+            // El nivel de consenso lo decide el admin explícitamente: sirve para mapear/calibrar zonas de prueba
+            forceStatus: consensusLevel === 'CRITICAL_SWARM' ? INCIDENT_STATES.CRITICAL_SWARM : null
           });
 
           if (res && res.incident) {
