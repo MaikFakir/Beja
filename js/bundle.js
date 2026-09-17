@@ -2430,15 +2430,96 @@
       }
     }
 
+    updateFloatingIncidentCard() {
+      try {
+        const incidents = swarmEngine.loadIncidents();
+        const titleEl = document.getElementById('floating-incident-title');
+        const timeEl = document.getElementById('floating-incident-time');
+        const subEl = document.getElementById('floating-incident-subtitle');
+        const badgeEl = document.getElementById('floating-incident-badge');
+        const iconEl = document.getElementById('floating-incident-icon');
+        const etaEl = document.getElementById('floating-route-eta');
+        const sectorEl = document.getElementById('badge-sector-text');
+
+        if (sectorEl && this.userCoords) {
+          sectorEl.textContent = 'Cuadrante Activo';
+        }
+
+        if (!incidents || incidents.length === 0) {
+          if (titleEl) titleEl.textContent = 'Cuadrante Seguro';
+          if (timeEl) timeEl.textContent = 'activo';
+          if (subEl) subEl.textContent = 'Sin incidentes activos • 18 vecinos atentos';
+          if (badgeEl) badgeEl.innerHTML = '<span>98% Segura</span>';
+          if (iconEl) iconEl.textContent = '🛡️';
+          if (etaEl) etaEl.textContent = '8m';
+          return;
+        }
+
+        let nearest = null;
+        let minDist = Infinity;
+        incidents.forEach(inc => {
+          const d = swarmEngine.calculateDistanceMeters(this.userCoords.lat, this.userCoords.lng, inc.lat, inc.lng);
+          if (d < minDist) {
+            minDist = d;
+            nearest = inc;
+          }
+        });
+
+        if (nearest) {
+          const cat = INCIDENT_CATEGORIES[nearest.category] || { name: 'Alerta SOS', icon: '🚨' };
+          const distMeters = Math.round(minDist);
+          if (titleEl) titleEl.textContent = `Alerta cercana (${distMeters}m)`;
+          if (timeEl) timeEl.textContent = 'hace 4m';
+          if (subEl) subEl.textContent = `${cat.name} • 18 vecinos atentos`;
+          if (iconEl) iconEl.textContent = cat.icon || '📍';
+          if (etaEl) etaEl.textContent = `${Math.max(2, Math.round(distMeters / 60))}m`;
+
+          if (badgeEl) {
+            if (nearest.status === INCIDENT_STATES.CRITICAL_SWARM) {
+              badgeEl.style.background = 'rgba(255, 51, 102, 0.15)';
+              badgeEl.style.borderColor = 'rgba(255, 51, 102, 0.4)';
+              badgeEl.style.color = '#ff3366';
+              badgeEl.innerHTML = '<span>Zona Roja</span>';
+            } else {
+              badgeEl.style.background = 'rgba(255, 184, 0, 0.15)';
+              badgeEl.style.borderColor = 'rgba(255, 184, 0, 0.4)';
+              badgeEl.style.color = '#f59e0b';
+              badgeEl.innerHTML = '<span>Alerta Sondeo</span>';
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Error updating floating incident card:', err);
+      }
+    }
+
     setupTabs() {
       const mobileNavItems = document.querySelectorAll('.nav-tab-item');
       const desktopNavItems = document.querySelectorAll('.desktop-tab-btn');
       const tabPanels = document.querySelectorAll('.tab-panel');
-      const mapCanvasPane = document.getElementById('app-map-pane');
-      const sidebarPanels = document.querySelector('.app-sidebar-panels');
+      const sidebarPanels = document.getElementById('app-sidebar-panels');
+      const floatingCard = document.getElementById('floating-incident-card');
+      const drawerTitle = document.getElementById('drawer-panel-title');
+
+      // Start with clean map view (drawer collapsed by default)
+      if (sidebarPanels) sidebarPanels.classList.add('drawer-collapsed');
+      if (floatingCard) floatingCard.classList.remove('hidden');
 
       const switchTab = (target) => {
         sounds.playClick();
+
+        // Handle direct SOS central button click
+        if (target === 'sos') {
+          if (!this.currentUser) {
+            sounds.playWarningPing();
+            this.showToast('🔒 Inicia sesión con tu cuenta de ciudadano para disparar el SOS.', 'warning');
+            document.getElementById('marketing-login-modal')?.classList.remove('hidden');
+            return;
+          }
+          sounds.playWarningPing();
+          this.startPanicCountdown();
+          return;
+        }
 
         // Enforce guest role permissions
         if (!this.currentUser && (target === 'report' || target === 'profile' || target === 'chat')) {
@@ -2470,29 +2551,24 @@
         const panel = document.getElementById('tab-' + target);
         if (panel) panel.classList.add('active');
 
-        const isMobile = window.innerWidth < 900;
-        if (isMobile) {
-          if (mapCanvasPane) mapCanvasPane.classList.add('mobile-map-active');
-          if (target === 'map') {
-            if (sidebarPanels) {
-              sidebarPanels.classList.add('mobile-map-view');
-              sidebarPanels.classList.remove('mobile-dock-active');
-            }
-          } else if (target === 'routes') {
-            if (sidebarPanels) {
-              sidebarPanels.classList.remove('mobile-map-view');
-              sidebarPanels.classList.add('mobile-dock-active');
-            }
-          } else {
-            if (sidebarPanels) {
-              sidebarPanels.classList.remove('mobile-map-view');
-              sidebarPanels.classList.remove('mobile-dock-active');
-            }
+        if (target === 'map') {
+          if (sidebarPanels) sidebarPanels.classList.add('drawer-collapsed');
+          if (floatingCard) floatingCard.classList.remove('hidden');
+        } else {
+          if (sidebarPanels) sidebarPanels.classList.remove('drawer-collapsed');
+          if (floatingCard) floatingCard.classList.add('hidden');
+
+          if (drawerTitle) {
+            if (target === 'report') drawerTitle.innerHTML = '📢 Zumbidos & Alertas';
+            else if (target === 'routes') drawerTitle.innerHTML = '🛡️ Navegación & Rutas Seguras';
+            else if (target === 'profile') drawerTitle.innerHTML = '🐝 Panal & Reputación';
+            else if (target === 'chat') drawerTitle.innerHTML = '👤 Perfil & Contactos Ciudadanos';
+            else drawerTitle.innerHTML = '🛡️ Panel Colmena';
           }
         }
 
         if (this.riskMap && this.riskMap.map) {
-          setTimeout(() => this.riskMap.map.invalidateSize(), 150);
+          setTimeout(() => this.riskMap.map.invalidateSize(), 180);
         }
       };
 
@@ -2504,11 +2580,54 @@
         item.addEventListener('click', () => switchTab(item.dataset.tab));
       });
 
-      if (window.innerWidth < 900) {
-        if (mapCanvasPane) mapCanvasPane.classList.add('mobile-map-active');
-        if (sidebarPanels) sidebarPanels.classList.add('mobile-map-view');
-      }
+      // Drawer close button
+      document.getElementById('btn-close-sidebar-drawer')?.addEventListener('click', () => {
+        switchTab('map');
+      });
 
+      // Centered Header Search Bar
+      const headerSearchInput = document.getElementById('header-route-search-input');
+      const headerSearchBtn = document.getElementById('btn-header-search-go');
+      const handleHeaderSearch = () => {
+        const query = headerSearchInput ? headerSearchInput.value.trim() : '';
+        if (query) {
+          const routeSearchInput = document.getElementById('route-search-input');
+          if (routeSearchInput) routeSearchInput.value = query;
+          switchTab('routes');
+          document.getElementById('btn-search-address')?.click();
+        } else {
+          switchTab('routes');
+        }
+      };
+      headerSearchBtn?.addEventListener('click', handleHeaderSearch);
+      headerSearchInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleHeaderSearch();
+        }
+      });
+
+      // Floating incident card actions
+      document.getElementById('btn-floating-view-route')?.addEventListener('click', () => {
+        switchTab('routes');
+        document.getElementById('btn-calc-route')?.click();
+      });
+      document.getElementById('btn-floating-notify')?.addEventListener('click', () => {
+        switchTab('report');
+      });
+
+      // Floating Layer button
+      document.getElementById('btn-floating-layers')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.getElementById('floating-layer-menu')?.classList.toggle('hidden');
+      });
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#btn-floating-layers') && !e.target.closest('#floating-layer-menu')) {
+          document.getElementById('floating-layer-menu')?.classList.add('hidden');
+        }
+      });
+
+      // Time filter buttons
       document.querySelectorAll('.time-filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           document.querySelectorAll('.time-filter-btn').forEach(b => b.classList.remove('active'));
@@ -2518,6 +2637,7 @@
         });
       });
 
+      // Recenter GPS
       document.getElementById('btn-recenter-gps')?.addEventListener('click', () => {
         sounds.playClick();
         geoResolver.resolveLocation();
@@ -2534,6 +2654,8 @@
           this.riskMap.setUserLocation(this.userCoords.lat, this.userCoords.lng, true);
         }
       });
+
+      this.updateFloatingIncidentCard();
     }
 
     setupPanic() {
@@ -3031,8 +3153,10 @@
       syncBus.on('INCIDENT_MUTATION', () => {
         this.renderFeed();
         this.updateTrustUI();
+        this.updateFloatingIncidentCard();
       });
       this.renderFeed();
+      this.updateFloatingIncidentCard();
     }
 
     handleGeofence(threat) {
