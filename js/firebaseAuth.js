@@ -214,46 +214,16 @@
             </div>
 
             <div class="google-accounts-list">
-              <button class="google-account-item" data-email="Gabyolarte2017@gmail.com">
-                <img src="https://api.dicebear.com/7.x/bottts/svg?seed=gabyolarte2017@gmail.com" class="google-account-avatar" alt="Avatar">
-                <div class="google-account-info">
-                  <span class="account-name">Gaby Olarte <span class="badge-role-pill admin-pill">👑 Super Admin</span></span>
-                  <span class="account-email">Gabyolarte2017@gmail.com</span>
-                </div>
-                <span class="account-arrow">➔</span>
-              </button>
-
-              <button class="google-account-item" data-email="patrullero.cuadrante07@gmail.com">
-                <img src="https://api.dicebear.com/7.x/bottts/svg?seed=patrullero.cuadrante07@gmail.com" class="google-account-avatar" alt="Avatar">
-                <div class="google-account-info">
-                  <span class="account-name">Patrullero Cuadrante 07 <span class="badge-role-pill patrol-pill">🚓 Patrullero</span></span>
-                  <span class="account-email">patrullero.cuadrante07@gmail.com</span>
-                </div>
-                <span class="account-arrow">➔</span>
-              </button>
-
-              <button class="google-account-item" data-email="vecino.colmena@gmail.com">
-                <img src="https://api.dicebear.com/7.x/bottts/svg?seed=vecino.colmena@gmail.com" class="google-account-avatar" alt="Avatar">
-                <div class="google-account-info">
-                  <span class="account-name">Vecino Ciudadano <span class="badge-role-pill citizen-pill">👤 Ciudadano</span></span>
-                  <span class="account-email">vecino.colmena@gmail.com</span>
-                </div>
-                <span class="account-arrow">➔</span>
-              </button>
-
               <div class="custom-google-account-section">
-                <button class="btn-toggle-custom-google" id="btn-toggle-custom-google">
-                  <span>➕ Usar otra cuenta de Google</span>
-                </button>
-                <div class="custom-email-drawer hidden" id="custom-google-email-drawer">
-                  <input type="email" id="custom-google-email-input" placeholder="tu_correo@gmail.com" class="google-custom-input">
+                <div class="custom-email-drawer" id="custom-google-email-drawer">
+                  <input type="email" id="custom-google-email-input" placeholder="tu_correo@ejemplo.com" class="google-custom-input">
                   <button class="btn-confirm-custom-google" id="btn-confirm-custom-google">Acceder ➔</button>
                 </div>
               </div>
             </div>
 
             <div class="google-chooser-footer">
-              <span>Para continuar, Google compartirá tu nombre, correo y foto de perfil con Colmena Segura.</span>
+              <span>Ingresa con tu correo para continuar en Colmena Segura.</span>
             </div>
           </div>
         </div>
@@ -278,14 +248,11 @@
       const directory = this.getUsersList();
       const existing = directory.find(u => u.email && u.email.toLowerCase() === cleanEmail);
 
-      let role = 'citizen';
-      if (isSuperAdmin) {
-        role = 'admin';
-      } else if (existing && existing.role) {
-        role = existing.role;
-      }
-
-      const name = isSuperAdmin ? 'GABY OLARTE (SUPER ADMIN)' : (cleanEmail.split('@')[0].replace(/[\._-]/g, ' ').toUpperCase());
+      // El acceso rápido por correo (sin verificación real) NUNCA otorga rol de admin/patrullero por sí solo,
+      // ni aunque coincida con el correo del Super Admin: esos roles solo se reconocen vía Google Sign-In real
+      // (applyFirebaseUser) o cuando un admin ya se los asignó desde el panel (y quedaron guardados en el directorio).
+      const role = (existing && existing.role) ? existing.role : 'citizen';
+      const name = cleanEmail.split('@')[0].replace(/[\._-]/g, ' ').toUpperCase();
       const userObj = {
         uid: existing ? existing.uid : ('usr_' + btoa(cleanEmail).replace(/=/g, '').slice(0, 10)),
         email: cleanEmail,
@@ -293,7 +260,7 @@
         photoURL: existing && existing.photoURL ? existing.photoURL : `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanEmail}`,
         role: role,
         // Usuario nuevo = reputación baja/inicial (debe ganarse la confianza); un usuario ya registrado conserva su puntaje
-        trustScore: isSuperAdmin ? 100 : (existing ? (existing.trustScore ?? 40) : 40),
+        trustScore: existing ? (existing.trustScore ?? 40) : 40,
         verifiedReports: existing ? (existing.verifiedReports || 0) : 0,
         validationsGiven: existing ? (existing.validationsGiven || 0) : 0,
         status: existing ? (existing.status || 'active') : 'active',

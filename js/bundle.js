@@ -119,6 +119,102 @@
     return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
   }
 
+  /**
+   * Búsqueda de direcciones con dos proveedores 100% gratuitos y sin API key: Nominatim (OSM)
+   * como principal, y Photon (Komoot, también sobre datos de OSM) como respaldo si el primero
+   * falla o no responde. Devuelve un arreglo normalizado, o null si AMBOS proveedores fallan
+   * (para distinguir "sin resultados" de "no se pudo conectar").
+   */
+  async function geocodeAddress(query, biasLat, biasLon) {
+    // 1. Nominatim (principal)
+    try {
+      const hasBias = typeof biasLat === 'number' && typeof biasLon === 'number' && !isNaN(biasLat) && !isNaN(biasLon);
+      const viewbox = hasBias ? `&viewbox=${biasLon - 0.3},${biasLat + 0.3},${biasLon + 0.3},${biasLat - 0.3}` : '';
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1${viewbox}`;
+      const resp = await fetch(url, { headers: { 'Accept-Language': 'es' } });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (Array.isArray(data)) {
+          return data.map(r => ({
+            label: r.display_name.split(',')[0],
+            sublabel: r.display_name.split(',').slice(1, 4).join(','),
+            lat: parseFloat(r.lat),
+            lon: parseFloat(r.lon)
+          })).filter(r => !isNaN(r.lat) && !isNaN(r.lon));
+        }
+      }
+    } catch (e) {
+      console.warn('Nominatim search failed, trying fallback:', e);
+    }
+
+    // 2. Photon (respaldo, también gratuito y sin API key)
+    try {
+      const hasBias = typeof biasLat === 'number' && typeof biasLon === 'number' && !isNaN(biasLat) && !isNaN(biasLon);
+      const biasParams = hasBias ? `&lat=${biasLat}&lon=${biasLon}` : '';
+      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lang=es${biasParams}`;
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && Array.isArray(data.features)) {
+          return data.features.map(f => {
+            const p = f.properties || {};
+            const coords = f.geometry && f.geometry.coordinates ? f.geometry.coordinates : null;
+            if (!coords) return null;
+            const parts = [p.street, p.city, p.state, p.country].filter(Boolean);
+            return {
+              label: p.name || p.street || 'Lugar sin nombre',
+              sublabel: parts.join(', '),
+              lat: coords[1],
+              lon: coords[0]
+            };
+          }).filter(Boolean);
+        }
+      }
+    } catch (e) {
+      console.warn('Photon search fallback also failed:', e);
+    }
+
+    return null; // Ambos proveedores fallaron (ej. sin conexión)
+  }
+
+  // Servidores públicos y gratuitos de OSRM (sin API key), en orden de preferencia por modo de viaje.
+  // Cada uno usa el perfil (foot/bike/driving) con el que ESE servidor específico fue realmente compilado;
+  // pedirle a un servidor un perfil que no tiene preparado (ej. "driving" al servidor de a pie) responde
+  // con error y desperdicia el intento, así que el orden aquí importa.
+  const OSRM_ENDPOINTS = {
+    walking: [
+      'https://routing.openstreetmap.de/routed-foot/route/v1/foot',
+      'https://routing.openstreetmap.de/routed-bike/route/v1/bike',
+      'https://routing.openstreetmap.de/routed-car/route/v1/driving',
+      'https://router.project-osrm.org/route/v1/driving'
+    ],
+    driving: [
+      'https://routing.openstreetmap.de/routed-car/route/v1/driving',
+      'https://router.project-osrm.org/route/v1/driving'
+    ]
+  };
+
+  /**
+   * Intenta calcular una ruta real (calles reales, no una línea recta) probando varios servidores
+   * OSRM gratuitos en orden hasta que uno responda con una ruta válida. Devuelve el objeto de
+   * respuesta OSRM completo (con .routes[]), o null si absolutamente ninguno respondió.
+   */
+  async function fetchOsrmRoute(coordsPath, mode, extraParams = '') {
+    const endpoints = OSRM_ENDPOINTS[mode] || OSRM_ENDPOINTS.driving;
+    for (const base of endpoints) {
+      try {
+        const resp = await fetch(`${base}/${coordsPath}?overview=full&geometries=geojson&steps=true${extraParams}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data && data.routes && data.routes.length > 0) {
+            return data;
+          }
+        }
+      } catch (e) {}
+    }
+    return null;
+  }
+
   // --- 1. SOUND ENGINE ---
   class SoundEngine {
     constructor() {
@@ -846,6 +942,10 @@
       this.heatLayer = null;
       this.markerLayerGroup = null;
       this.routeLayerGroup = null;
+      this.safePointsLayerGroup = null;
+      this.safePointsVisible = false;
+      this.safePointsFetchedBounds = null;
+      this.safePointsFetching = false;
       this.userMarker = null;
       this.originPin = null;
       this.destPin = null;
@@ -895,6 +995,7 @@
 
         this.markerLayerGroup = L.layerGroup().addTo(this.map);
         this.routeLayerGroup = L.layerGroup().addTo(this.map);
+        this.safePointsLayerGroup = L.layerGroup();
 
         this.setupUserMarker();
         this.renderHeatmap();
@@ -909,6 +1010,11 @@
           if (this.onMapClickCallback) {
             this.onMapClickCallback(e.latlng);
           }
+        });
+
+        // Si los "Puntos Seguros" están activos y el usuario se aleja del área ya consultada, refresca
+        this.map.on('moveend', () => {
+          if (this.safePointsVisible) this.fetchSafePointsIfNeeded();
         });
 
         setTimeout(() => { if (this.map) this.map.invalidateSize(); }, 200);
@@ -1097,6 +1203,69 @@
       });
     }
 
+    /**
+     * Puntos Seguros: estaciones/CAI de policía cercanos, obtenidos gratis y sin API key desde
+     * Overpass (datos de OpenStreetMap). Se activa/desactiva con el botón "🛡️ Puntos Seguros".
+     */
+    toggleSafePoints(visible) {
+      this.safePointsVisible = visible;
+      if (!this.map || !this.safePointsLayerGroup) return;
+      if (visible) {
+        this.safePointsLayerGroup.addTo(this.map);
+        this.fetchSafePointsIfNeeded();
+      } else {
+        this.map.removeLayer(this.safePointsLayerGroup);
+      }
+    }
+
+    fetchSafePointsIfNeeded() {
+      if (!this.map || this.safePointsFetching) return;
+      const bounds = this.map.getBounds().pad(0.3);
+      // Evita golpear Overpass en cada micro-movimiento: solo si salimos del área ya cubierta
+      if (this.safePointsFetchedBounds && this.safePointsFetchedBounds.contains(bounds)) return;
+      this.fetchAndRenderSafePoints(bounds);
+    }
+
+    async fetchAndRenderSafePoints(bounds) {
+      if (!window.L) return;
+      this.safePointsFetching = true;
+      try {
+        const sw = bounds.getSouthWest();
+        const ne = bounds.getNorthEast();
+        const query = `[out:json][timeout:20];(node["amenity"="police"](${sw.lat},${sw.lng},${ne.lat},${ne.lng});way["amenity"="police"](${sw.lat},${sw.lng},${ne.lat},${ne.lng}););out center;`;
+        const resp = await fetch('https://overpass-api.de/api/interpreter', {
+          method: 'POST',
+          body: 'data=' + encodeURIComponent(query)
+        });
+        if (!resp.ok) return; // Overpass no disponible/limitado en este momento: se deja el mapa como está, sin puntos seguros extra
+        const data = await resp.json();
+        if (!data || !Array.isArray(data.elements)) return;
+
+        this.safePointsLayerGroup.clearLayers();
+        data.elements.forEach(el => {
+          const lat = el.lat || (el.center && el.center.lat);
+          const lon = el.lon || (el.center && el.center.lon);
+          if (typeof lat !== 'number' || typeof lon !== 'number') return;
+          const name = (el.tags && (el.tags.name || el.tags['name:es'])) || 'Estación de Policía';
+          const icon = L.divIcon({
+            className: 'safe-point-marker',
+            html: '<div style="background:rgba(0,210,255,0.18);border:2px solid #00d2ff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 0 10px rgba(0,210,255,0.5);">🛡️</div>',
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+          });
+          L.marker([lat, lon], { icon })
+            .bindPopup(`<div class="tactical-popup"><div class="popup-header"><span class="popup-category">🛡️ Punto Seguro</span></div><div class="popup-body"><p><strong>${name}</strong></p><p style="color:var(--text-muted);font-size:0.72rem;">Estación/CAI de policía (OpenStreetMap)</p></div></div>`)
+            .addTo(this.safePointsLayerGroup);
+        });
+
+        this.safePointsFetchedBounds = bounds;
+      } catch (e) {
+        console.warn('No se pudieron cargar los Puntos Seguros (Overpass):', e);
+      } finally {
+        this.safePointsFetching = false;
+      }
+    }
+
     getDismissedGeofenceMap() {
       try {
         const raw = localStorage.getItem('beja_dismissed_geofence_v2');
@@ -1196,49 +1365,30 @@
       let directDuration = 0;
       let directSteps = [];
       let osrmAlternatives = [];
+      let directIsApproximate = false;
 
-      try {
-        let resp;
-        if (mode === 'walking') {
-          try {
-            resp = await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/foot/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`);
-          } catch (e) {}
-          if (!resp || !resp.ok) {
-            try {
-              resp = await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`);
-            } catch (e) {}
-          }
-        } else {
-          try {
-            resp = await fetch(`https://routing.openstreetmap.de/routed-car/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`);
-          } catch (e) {}
+      const directRoute = await fetchOsrmRoute(`${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}`, mode, '&alternatives=true');
+      if (directRoute) {
+        const r = directRoute.routes[0];
+        directDistance = r.distance;
+        directDuration = r.duration;
+        directCoords = r.geometry.coordinates.map(c => [c[1], c[0]]);
+        if (r.legs && r.legs[0]?.steps) {
+          directSteps = r.legs[0].steps.map(s => {
+            const modifier = s.maneuver.modifier ? ` (${s.maneuver.modifier})` : '';
+            const roadName = s.name ? `por <strong>${s.name}</strong>` : 'por vía principal';
+            return `${s.maneuver.type}${modifier} ${roadName} (${Math.round(s.distance)} m)`;
+          });
         }
-
-        if (!resp || !resp.ok) {
-          resp = await fetch(`https://router.project-osrm.org/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`);
+        if (directRoute.routes.length > 1) {
+          osrmAlternatives = directRoute.routes.slice(1);
         }
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.routes && data.routes.length > 0) {
-            const r = data.routes[0];
-            directDistance = r.distance;
-            directDuration = r.duration;
-            directCoords = r.geometry.coordinates.map(c => [c[1], c[0]]);
-            if (r.legs && r.legs[0]?.steps) {
-              directSteps = r.legs[0].steps.map(s => {
-                const modifier = s.maneuver.modifier ? ` (${s.maneuver.modifier})` : '';
-                const roadName = s.name ? `por <strong>${s.name}</strong>` : 'por vía principal';
-                return `${s.maneuver.type}${modifier} ${roadName} (${Math.round(s.distance)} m)`;
-              });
-            }
-            if (data.routes.length > 1) {
-              osrmAlternatives = data.routes.slice(1);
-            }
-          }
-        }
-      } catch (err) {}
+      }
 
       if (directCoords.length === 0) {
+        // Ningún servidor de ruteo respondió: se traza una línea recta aproximada como último recurso
+        // (no sigue calles reales, puede cruzar manzanas/edificios — se marca como aproximada en la UI).
+        directIsApproximate = true;
         directCoords = [
           [startLatLng.lat, startLatLng.lng],
           [startLatLng.lat + (endLatLng.lat - startLatLng.lat) * 0.5, startLatLng.lng],
@@ -1246,7 +1396,7 @@
         ];
         directDistance = 1400;
         directDuration = (mode === 'walking') ? 1050 : 210;
-        directSteps = ['Avanza en línea recta hacia tu destino.'];
+        directSteps = ['⚠️ Ruta aproximada: no se pudo contactar un servidor de calles en este momento.'];
       }
 
       // 2. High-Precision Segment-Level Intersection Detection (against 50m radius)
@@ -1293,6 +1443,7 @@
       let detourDuration = 0;
       let detourSteps = [];
       let detourWaypoints = null;
+      let detourIsApproximate = false;
 
       if (hasThreat && threatDetails) {
         const tLat = threatDetails.lat;
@@ -1350,53 +1501,30 @@
               const lngOff = (sign * latDist * nLng) / (111000 * cosLat);
               const viaApex = [tLat + latOff, tLng + lngOff];
 
-              try {
-                let dResp;
-                if (mode === 'walking') {
-                  try {
-                    dResp = await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/foot/${startLatLng.lng},${startLatLng.lat};${viaApex[1]},${viaApex[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
-                  } catch (e) {}
-                  if (!dResp || !dResp.ok) {
-                    try {
-                      dResp = await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${viaApex[1]},${viaApex[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
-                    } catch (e) {}
-                  }
-                } else {
-                  try {
-                    dResp = await fetch(`https://routing.openstreetmap.de/routed-car/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${viaApex[1]},${viaApex[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
-                  } catch (e) {}
-                }
+              const dData = await fetchOsrmRoute(`${startLatLng.lng},${startLatLng.lat};${viaApex[1]},${viaApex[0]};${endLatLng.lng},${endLatLng.lat}`, mode);
+              if (dData) {
+                const dR = dData.routes[0];
+                const testCoords = dR.geometry.coordinates.map(c => [c[1], c[0]]);
+                const testDistToThreat = this.getMinDistanceToPolyline(testCoords, tLat, tLng);
 
-                if (!dResp || !dResp.ok) {
-                  dResp = await fetch(`https://router.project-osrm.org/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${viaApex[1]},${viaApex[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
-                }
-                if (dResp.ok) {
-                  const dData = await dResp.json();
-                  if (dData.routes && dData.routes.length > 0) {
-                    const dR = dData.routes[0];
-                    const testCoords = dR.geometry.coordinates.map(c => [c[1], c[0]]);
-                    const testDistToThreat = this.getMinDistanceToPolyline(testCoords, tLat, tLng);
-
-                    if (testDistToThreat >= 65) {
-                      let steps = [];
-                      if (dR.legs) {
-                        steps = dR.legs.flatMap(l => l.steps || []).map(s => {
-                          const roadName = s.name ? `por <strong>${s.name}</strong>` : 'por calle alterna';
-                          return `Desvío seguro: ${s.maneuver.type} ${roadName} (${Math.round(s.distance)} m)`;
-                        });
-                      }
-                      bestCandidate = {
-                        coords: testCoords,
-                        distance: dR.distance,
-                        duration: dR.duration,
-                        steps: steps,
-                        waypoint: viaApex
-                      };
-                      break;
-                    }
+                if (testDistToThreat >= 65) {
+                  let steps = [];
+                  if (dR.legs) {
+                    steps = dR.legs.flatMap(l => l.steps || []).map(s => {
+                      const roadName = s.name ? `por <strong>${s.name}</strong>` : 'por calle alterna';
+                      return `Desvío seguro: ${s.maneuver.type} ${roadName} (${Math.round(s.distance)} m)`;
+                    });
                   }
+                  bestCandidate = {
+                    coords: testCoords,
+                    distance: dR.distance,
+                    duration: dR.duration,
+                    steps: steps,
+                    waypoint: viaApex
+                  };
+                  break;
                 }
-              } catch (e) {}
+              }
 
               if (bestCandidate) break;
             }
@@ -1433,11 +1561,12 @@
           detourDistance = directDistance + 360;
           detourDuration = (mode === 'walking') ? Math.round(detourDistance / 1.33) : Math.round(detourDistance / 8.33);
           detourSteps = [
-            'Inicio de marcha en ruta despejada.',
-            'Desvío perimetral por calle alterna esquivando zona de alerta (150m de resguardo).',
-            'Incorporación a vía segura hacia el destino.'
+            '⚠️ Desvío aproximado: ningún servidor de calles confirmó una vía real para este rodeo.',
+            'Desvío perimetral estimado esquivando la zona de alerta (150m de resguardo).',
+            'Incorporación estimada hacia el destino.'
           ];
           detourWaypoints = viaApex;
+          detourIsApproximate = true;
         }
       }
 
@@ -1504,13 +1633,15 @@
             distanceKm: (directDistance / 1000).toFixed(1),
             etaMins: Math.max(1, Math.round(directDuration / 60)),
             steps: directSteps,
-            gmapsUrl: directGmapsUrl
+            gmapsUrl: directGmapsUrl,
+            isApproximate: directIsApproximate
           },
           detour: {
             distanceKm: (detourDistance / 1000).toFixed(1),
             etaMins: Math.max(1, Math.round(detourDuration / 60)),
             steps: detourSteps,
-            gmapsUrl: detourGmapsUrl
+            gmapsUrl: detourGmapsUrl,
+            isApproximate: detourIsApproximate
           }
         };
       } else {
@@ -1539,7 +1670,8 @@
           distanceKm: (directDistance / 1000).toFixed(1),
           etaMins: Math.max(1, Math.round(directDuration / 60)),
           steps: directSteps,
-          googleMapsUrl: directGmapsUrl
+          googleMapsUrl: directGmapsUrl,
+          isApproximate: directIsApproximate
         };
       }
     }
@@ -1717,11 +1849,11 @@
           cloudIncidents.push(data);
         });
 
-        if (cloudIncidents.length > 0) {
-          swarmEngine.incidents = cloudIncidents;
-          localStorage.setItem(swarmEngine.STORAGE_KEY_INCIDENTS, JSON.stringify(cloudIncidents));
-          syncBus.emit('INCIDENT_MUTATION', { action: 'CLOUD_SYNC' });
-        }
+        // Siempre reflejar el estado real de la nube (incluida la transición a "cero incidentes"),
+        // para que un incidente resuelto/descartado por otro usuario también desaparezca aquí.
+        swarmEngine.incidents = cloudIncidents;
+        localStorage.setItem(swarmEngine.STORAGE_KEY_INCIDENTS, JSON.stringify(cloudIncidents));
+        syncBus.emit('INCIDENT_MUTATION', { action: 'CLOUD_SYNC', count: cloudIncidents.length });
 
         if (isInitialIncidentsLoad) {
           // On startup load: index known IDs and ONLY notify if there is an event that literally just happened (<= 3 min) and not yet notified this session
@@ -2003,46 +2135,16 @@
             </div>
 
             <div class="google-accounts-list">
-              <button class="google-account-item" data-email="Gabyolarte2017@gmail.com">
-                <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Gaby" class="google-account-avatar" alt="Avatar">
-                <div class="google-account-info">
-                  <span class="account-name">Gaby Olarte <span class="badge-role-pill admin-pill">👑 Super Admin</span></span>
-                  <span class="account-email">Gabyolarte2017@gmail.com</span>
-                </div>
-                <span class="account-arrow">➔</span>
-              </button>
-
-              <button class="google-account-item" data-email="patrullero.cuadrante07@gmail.com">
-                <img src="https://api.dicebear.com/7.x/bottts/svg?seed=patrullero" class="google-account-avatar" alt="Avatar">
-                <div class="google-account-info">
-                  <span class="account-name">Patrullero Cuadrante 07 <span class="badge-role-pill patrol-pill">🚓 Patrullero</span></span>
-                  <span class="account-email">patrullero.cuadrante07@gmail.com</span>
-                </div>
-                <span class="account-arrow">➔</span>
-              </button>
-
-              <button class="google-account-item" data-email="vecino.colmena@gmail.com">
-                <img src="https://api.dicebear.com/7.x/bottts/svg?seed=vecino" class="google-account-avatar" alt="Avatar">
-                <div class="google-account-info">
-                  <span class="account-name">Vecino Ciudadano <span class="badge-role-pill citizen-pill">👤 Ciudadano</span></span>
-                  <span class="account-email">vecino.colmena@gmail.com</span>
-                </div>
-                <span class="account-arrow">➔</span>
-              </button>
-
               <div class="custom-google-account-section">
-                <button class="btn-toggle-custom-google" id="btn-toggle-custom-google">
-                  <span>➕ Usar otra cuenta de Google</span>
-                </button>
-                <div class="custom-email-drawer hidden" id="custom-google-email-drawer">
-                  <input type="email" id="custom-google-email-input" placeholder="tu_correo@gmail.com" class="google-custom-input">
+                <div class="custom-email-drawer" id="custom-google-email-drawer">
+                  <input type="email" id="custom-google-email-input" placeholder="tu_correo@ejemplo.com" class="google-custom-input">
                   <button class="btn-confirm-custom-google" id="btn-confirm-custom-google">Acceder ➔</button>
                 </div>
               </div>
             </div>
 
             <div class="google-chooser-footer">
-              <span>Para continuar, Google compartirá tu nombre, correo y foto de perfil con Colmena Segura.</span>
+              <span>Ingresa con tu correo para continuar en Colmena Segura.</span>
             </div>
           </div>
         </div>
@@ -2066,21 +2168,14 @@
     loginWithEmail(email) {
       if (!email || !email.includes('@')) return null;
       const cleanEmail = email.trim().toLowerCase();
-      const isSuperAdmin = cleanEmail === this.SUPER_ADMIN_EMAIL.toLowerCase();
 
       const directory = this.getUsersList();
       const existing = directory.find(u => u.email && u.email.toLowerCase() === cleanEmail);
 
-      let role = 'citizen';
-      if (isSuperAdmin) {
-        role = 'admin';
-      } else if (existing && existing.role) {
-        role = existing.role;
-      } else if (cleanEmail.includes('patrullero') || cleanEmail.includes('cuadrante')) {
-        role = 'patrol';
-      }
-
-      const name = isSuperAdmin ? 'GABY OLARTE (SUPER ADMIN)' : (cleanEmail.split('@')[0].replace(/[\._-]/g, ' ').toUpperCase());
+      // El acceso rápido por correo (sin verificación real) nunca otorga rol de admin/patrullero por sí solo:
+      // esos roles solo se reconocen vía Google Sign-In real o si un admin ya los asignó desde el panel.
+      const role = (existing && existing.role) ? existing.role : 'citizen';
+      const name = cleanEmail.split('@')[0].replace(/[\._-]/g, ' ').toUpperCase();
       const userObj = {
         uid: existing ? existing.uid : ('usr_' + btoa(cleanEmail).replace(/=/g, '').slice(0, 10)),
         email: cleanEmail,
@@ -2088,7 +2183,7 @@
         photoURL: existing && existing.photoURL ? existing.photoURL : `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanEmail}`,
         role: role,
         // Usuario nuevo = reputación baja/inicial (debe ganarse la confianza); un usuario ya registrado conserva su puntaje
-        trustScore: isSuperAdmin ? 100 : (existing ? (existing.trustScore ?? 40) : 40),
+        trustScore: existing ? (existing.trustScore ?? 40) : 40,
         verifiedReports: existing ? (existing.verifiedReports || 0) : 0,
         validationsGiven: existing ? (existing.validationsGiven || 0) : 0,
         status: existing ? (existing.status || 'active') : 'active',
@@ -2918,7 +3013,8 @@
         sounds.playClick();
         btnToggleSafepoints.classList.toggle('active');
         const isActive = btnToggleSafepoints.classList.contains('active');
-        this.showToast(isActive ? '🛡️ Puntos Seguros visibilizados' : '🛡️ Puntos Seguros ocultos', 'info');
+        if (this.riskMap) this.riskMap.toggleSafePoints(isActive);
+        this.showToast(isActive ? '🛡️ Buscando estaciones de policía cercanas...' : '🛡️ Puntos Seguros ocultos', 'info');
       });
 
       // Floating Layer button
@@ -3188,48 +3284,46 @@
           dropdown.innerHTML = '<div style="padding:10px;color:var(--text-muted);">🔍 Buscando en tu ciudad...</div>';
         }
 
-        try {
-          const lat = this.userCoords.lat;
-          const lon = this.userCoords.lng;
-          const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&addressdetails=1&viewbox=${lon-0.3},${lat+0.3},${lon+0.3},${lat-0.3}`;
-          const resp = await fetch(url, { headers: { 'Accept-Language': 'es' } });
-          if (resp.ok) {
-            const results = await resp.json();
-            if (results.length === 0) {
-              if (dropdown) dropdown.innerHTML = '<div style="padding:10px;color:var(--color-warning);">No se encontraron lugares con ese nombre.</div>';
-              return;
-            }
-            if (dropdown) {
-              dropdown.innerHTML = results.map((r, i) => `
-                <div class="search-result-item" data-index="${i}">
-                  <strong>📍 ${r.display_name.split(',')[0]}</strong>
-                  <small>${r.display_name.split(',').slice(1, 4).join(',')}</small>
-                </div>
-              `).join('');
+        const lat = (this.userCoords && typeof this.userCoords.lat === 'number') ? this.userCoords.lat : geoResolver.currentCoords.lat;
+        const lon = (this.userCoords && typeof this.userCoords.lng === 'number') ? this.userCoords.lng : geoResolver.currentCoords.lng;
 
-              dropdown.querySelectorAll('.search-result-item').forEach(item => {
-                item.addEventListener('click', () => {
-                  const idx = parseInt(item.dataset.index);
-                  const selected = results[idx];
-                  const destLat = parseFloat(selected.lat);
-                  const destLng = parseFloat(selected.lon);
+        const results = await geocodeAddress(q, lat, lon);
 
-                  this.destinationCoords = { lat: destLat, lng: destLng };
-                  this.riskMap.setDestinationPin(destLat, destLng);
-                  this.updateDestAddressUI(destLat, destLng);
-                  dropdown.classList.add('hidden');
+        if (!results) {
+          if (dropdown) dropdown.innerHTML = '<div style="padding:10px;color:var(--color-critical);">No se pudo conectar con el buscador de direcciones. Verifica tu conexión e intenta de nuevo.</div>';
+          return;
+        }
+        if (results.length === 0) {
+          if (dropdown) dropdown.innerHTML = '<div style="padding:10px;color:var(--color-warning);">No se encontraron lugares con ese nombre.</div>';
+          return;
+        }
+        if (dropdown) {
+          dropdown.innerHTML = results.map((r, i) => `
+            <div class="search-result-item" data-index="${i}">
+              <strong>📍 ${r.label}</strong>
+              <small>${r.sublabel}</small>
+            </div>
+          `).join('');
 
-                  if (this.riskMap.map) {
-                    this.riskMap.map.setView([destLat, destLng], 16, { animate: true });
-                  }
+          dropdown.querySelectorAll('.search-result-item').forEach(item => {
+            item.addEventListener('click', () => {
+              const idx = parseInt(item.dataset.index);
+              const selected = results[idx];
+              const destLat = selected.lat;
+              const destLng = selected.lon;
 
-                  this.calculateAndRenderRoute();
-                });
-              });
-            }
-          }
-        } catch (e) {
-          if (dropdown) dropdown.innerHTML = '<div style="padding:10px;color:var(--color-critical);">Error al buscar dirección.</div>';
+              this.destinationCoords = { lat: destLat, lng: destLng };
+              this.riskMap.setDestinationPin(destLat, destLng);
+              this.updateDestAddressUI(destLat, destLng);
+              dropdown.classList.add('hidden');
+
+              if (this.riskMap.map) {
+                this.riskMap.map.setView([destLat, destLng], 16, { animate: true });
+              }
+
+              this.calculateAndRenderRoute();
+            });
+          });
         }
       };
 
@@ -3275,6 +3369,12 @@
                 </p>
               </div>
             </div>
+
+            ${(res.direct.isApproximate || res.detour.isApproximate) ? `
+              <div style="background:rgba(255,184,0,0.1);border:1px dashed rgba(255,184,0,0.4);border-radius:8px;padding:8px 10px;margin-top:8px;font-size:0.72rem;color:var(--color-warning);">
+                ⚠️ No se pudo contactar al servidor de rutas por calles en este momento: la ${res.direct.isApproximate && res.detour.isApproximate ? 'ruta directa y el desvío son aproximados' : (res.direct.isApproximate ? 'ruta directa es aproximada' : 'sub-ruta alterna es aproximada')} (línea recta, puede no seguir calles reales). Intenta de nuevo en unos segundos.
+              </div>
+            ` : ''}
 
             <div class="route-comparison-grid">
               <div class="route-choice-box choice-direct">
@@ -3372,6 +3472,11 @@
           // Clear route
           card.className = 'route-results-card route-card-safe';
           text.innerHTML = `
+            ${res.isApproximate ? `
+              <div style="background:rgba(255,184,0,0.1);border:1px dashed rgba(255,184,0,0.4);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:0.72rem;color:var(--color-warning);">
+                ⚠️ No se pudo contactar al servidor de rutas por calles en este momento: esta es una línea aproximada, puede no seguir calles reales. Intenta de nuevo en unos segundos.
+              </div>
+            ` : ''}
             ✅ <strong>Camino Despejado:</strong> Calles libres de alertas comunitarias y sin puntos calientes en el trayecto.<br><br>
             📏 <strong>Distancia:</strong> ${res.distanceKm} km | ⏱️ <strong>Tiempo estimado:</strong> ${res.etaMins} min.<br>
             <div style="margin-top: 10px;">

@@ -861,17 +861,20 @@
 
       this.db.collection('incidents').onSnapshot((snapshot) => {
         const cloudIncidents = [];
+        const dismissedIds = swarmEngine.getDismissedIds ? swarmEngine.getDismissedIds() : [];
         snapshot.forEach(doc => {
           const data = doc.data();
           data.id = doc.id;
+          if (data.status === INCIDENT_STATES.RESOLVED || data.status === INCIDENT_STATES.FALSE_ALARM || dismissedIds.includes(doc.id)) {
+            return;
+          }
           cloudIncidents.push(data);
         });
 
-        if (cloudIncidents.length > 0) {
-          swarmEngine.incidents = cloudIncidents;
-          localStorage.setItem(swarmEngine.STORAGE_KEY_INCIDENTS, JSON.stringify(cloudIncidents));
-          syncBus.emit('INCIDENT_MUTATION', { action: 'CLOUD_SYNC' });
-        }
+        // Siempre reflejar el estado real de la nube (incluida la transición a "cero incidentes")
+        swarmEngine.incidents = cloudIncidents;
+        localStorage.setItem(swarmEngine.STORAGE_KEY_INCIDENTS, JSON.stringify(cloudIncidents));
+        syncBus.emit('INCIDENT_MUTATION', { action: 'CLOUD_SYNC', count: cloudIncidents.length });
       });
     }
 
@@ -1063,8 +1066,7 @@
 
     setupAuthorityGate() {
       const gateModal = document.getElementById('admin-access-gate-modal');
-      const btnSuperAdmin = document.getElementById('btn-gate-super-admin');
-      const btnPatrol = document.getElementById('btn-gate-patrol');
+      const btnGoogleSignIn = document.getElementById('btn-gate-google-signin');
       const btnToggleCustom = document.getElementById('btn-gate-toggle-custom');
       const customDrawer = document.getElementById('gate-custom-auth-drawer');
       const customInput = document.getElementById('gate-custom-email-input');
@@ -1113,22 +1115,23 @@
         }
       };
 
-      // 1-Tap Super Admin Entry
-      btnSuperAdmin?.addEventListener('click', () => {
-        sounds.playDispatchChime();
-        const user = window.firebaseAuth 
-          ? window.firebaseAuth.loginWithEmail('Gabyolarte2017@gmail.com')
-          : { email: 'Gabyolarte2017@gmail.com', role: 'admin', displayName: 'GABY OLARTE (SUPER ADMIN)', photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=Gaby' };
-        this.unlockC2(user);
-      });
-
-      // 1-Tap Patrol Entry
-      btnPatrol?.addEventListener('click', () => {
-        sounds.playDispatchChime();
-        const user = window.firebaseAuth 
-          ? window.firebaseAuth.loginWithEmail('patrullero.cuadrante07@gmail.com')
-          : { email: 'patrullero.cuadrante07@gmail.com', role: 'patrol', displayName: 'PATRULLERO CUADRANTE 07', photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=patrullero' };
-        this.unlockC2(user);
+      // Acceso real con Google (usa signInWithPopup si Firebase está configurado)
+      btnGoogleSignIn?.addEventListener('click', async () => {
+        sounds.playClick();
+        if (!window.firebaseAuth) return;
+        try {
+          const user = await window.firebaseAuth.loginWithGoogle();
+          if (!user) return; // cancelado, o bloqueado (firebaseAuth ya mostró el motivo)
+          if (user.role === 'admin' || user.role === 'patrol') {
+            sounds.playDispatchChime();
+            this.unlockC2(user);
+          } else {
+            sounds.playWarningPing();
+            alert('⚠️ La cuenta (' + user.email + ') tiene rol de CIUDADANO y no tiene permisos de Autoridad/Admin en el Centro C2.');
+          }
+        } catch (e) {
+          alert('No se pudo completar el inicio de sesión con Google.');
+        }
       });
 
       // Toggle Custom Drawer
@@ -1149,7 +1152,7 @@
           if (user && (user.role === 'admin' || user.role === 'patrol')) {
             this.unlockC2(user);
           } else {
-            alert('⚠️ El correo (' + email + ') no tiene permisos de Autoridad/Admin. Usa Gabyolarte2017@gmail.com o un correo de patrullero.');
+            alert('⚠️ El correo (' + email + ') no tiene permisos de Autoridad/Admin asignados. Pide a un administrador que te habilite desde el Directorio Ciudadano, o ingresa con Google.');
           }
         } else {
           alert('Ingresa un correo electrónico válido.');
@@ -1177,9 +1180,11 @@
     }
 
     unlockC2(user) {
+      // El estado del encabezado y el ocultamiento del modal ya los actualiza evaluateAuth()
+      // (registrado una sola vez en setupAuthorityGate) al reaccionar al cambio de sesión;
+      // aquí solo refrescamos lo que ese listener no toca: mapa, cola y directorio.
       const gateModal = document.getElementById('admin-access-gate-modal');
       if (gateModal) gateModal.classList.add('hidden');
-      this.setupAuthorityGate();
       if (this.tacticalMap && this.tacticalMap.map) {
         setTimeout(() => {
           this.tacticalMap.map.invalidateSize();
@@ -1193,15 +1198,15 @@
     }
 
     async promptAuthorityLogin() {
-      if (window.firebaseAuth && window.firebaseAuth.openGoogleChooser) {
-        const user = await window.firebaseAuth.openGoogleChooser();
+      if (window.firebaseAuth && window.firebaseAuth.loginWithGoogle) {
+        const user = await window.firebaseAuth.loginWithGoogle();
         if (user) {
           if (user.role === 'admin' || user.role === 'patrol') {
             sounds.playDispatchChime();
             this.unlockC2(user);
           } else {
             sounds.playWarningPing();
-            alert('⚠️ La cuenta (' + user.email + ') tiene rol de CIUDADANO y no tiene permisos para despachar unidades ni moderar en el Centro C2. Por favor selecciona una cuenta de Autoridad (Gaby Olarte o Patrullero).');
+            alert('⚠️ La cuenta (' + user.email + ') tiene rol de CIUDADANO y no tiene permisos para despachar unidades ni moderar en el Centro C2.');
           }
         }
       }

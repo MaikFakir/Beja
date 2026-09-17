@@ -421,32 +421,34 @@
       <div style="font-size: 3rem; margin-bottom: 12px; filter: drop-shadow(0 0 16px rgba(239, 68, 68, 0.6));">🛡️</div>
       <h2 style="color: #fff; font-size: 1.25rem; font-weight: 800; margin-bottom: 8px;">C2 DESPACHO CENTRAL • ACCESO RESTRINGIDO</h2>
       <p style="color: #94a3b8; font-size: 0.85rem; line-height: 1.5; margin-bottom: 20px;">
-        Este centro de control táctico está reservado exclusivamente para <strong>Autoridades Policiales, Cuadrantes y Administradores</strong> (ej: <span style="color:#00d2ff; font-family:var(--font-mono);">Gabyolarte2017@gmail.com</span>).
+        Este centro de control táctico está reservado exclusivamente para <strong>Autoridades Policiales, Cuadrantes y Administradores</strong> verificados con su cuenta de Google.
       </p>
       <div style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 14px; margin-bottom: 20px; font-size: 0.8rem; color: #cbd5e1; text-align: left;">
         <div style="margin-bottom: 6px;">🔒 <strong>Requisitos de acceso:</strong></div>
         <div style="margin-left: 10px; line-height: 1.6;">
-          • Cuenta de Administrador Principal o Patrullero autorizada.<br>
+          • Cuenta de Administrador o Patrullero autorizada.<br>
           • Los ciudadanos e invitados deben navegar desde la App Comunitaria.
         </div>
       </div>
       <div style="display: flex; flex-direction: column; gap: 10px;">
-        <button class="tactical-btn" id="btn-gate-super-admin" style="background: linear-gradient(135deg, #ef4444, #b91c1c); color: #fff; padding: 12px; font-weight: 800; font-size: 0.95rem; border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 0 20px rgba(239, 68, 68, 0.4); display: flex; align-items: center; justify-content: center; gap: 8px;">
-          <span>👑</span> Acceder como Gaby Olarte (Super Admin)
-        </button>
-
-        <button class="tactical-btn" id="btn-gate-patrol" style="background: rgba(59, 130, 246, 0.2); border: 1px solid #3b82f6; color: #93c5fd; padding: 11px; font-weight: 700; font-size: 0.9rem; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
-          <span>🚓</span> Acceder como Patrullero (Cuadrante 07)
+        <button class="tactical-btn" id="btn-gate-google-signin" style="background: #fff; color: #1f2937; padding: 12px; font-weight: 800; font-size: 0.95rem; border: none; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <svg viewBox="0 0 24 24" width="20" height="20">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          Continuar con Google
         </button>
 
         <div style="border-top: 1px solid rgba(255,255,255,0.08); margin: 4px 0;"></div>
 
         <button class="tactical-btn" id="btn-gate-toggle-custom" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: #cbd5e1; padding: 9px; font-size: 0.82rem; border-radius: 8px; cursor: pointer;">
-          ➕ Usar otro correo de Autoridad
+          ➕ Entrar con otro correo autorizado
         </button>
 
         <div id="gate-custom-auth-drawer" class="hidden" style="display: flex; gap: 8px; margin-top: 4px;">
-          <input type="email" id="gate-custom-email-input" placeholder="tu_correo_oficial@gmail.com" class="tactical-input" style="flex: 1; font-size: 0.85rem; padding: 8px 12px; background: #0c1220;">
+          <input type="email" id="gate-custom-email-input" placeholder="tu_correo_oficial@ejemplo.com" class="tactical-input" style="flex: 1; font-size: 0.85rem; padding: 8px 12px; background: #0c1220;">
           <button id="btn-gate-custom-enter" class="tactical-btn" style="background: #ef4444; color: #fff; padding: 8px 14px; font-weight: 700; border-radius: 8px;">Entrar ➔</button>
         </div>
 

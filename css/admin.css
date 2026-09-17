@@ -719,6 +719,17 @@ html, body.admin-body {
   display: none !important;
 }
 
+/* La vista de Avisos de Zona solo trae estilos inline (padding/overflow); le faltaba ocupar
+   todo el ancho del grid del workspace (390px 1fr), por eso se veía "cortada" en una columna angosta */
+.admin-broadcasts-panel {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.admin-broadcasts-panel.hidden {
+  display: none !important;
+}
+
 .users-panel-header {
   display: flex;
   align-items: center;
@@ -1047,11 +1058,16 @@ html, body.admin-body {
    VIEW 4: TACTICAL RADIO & COMMS STATION (#admin-chat-panel)
    ========================================================================== */
 .admin-chat-panel {
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: 320px 1fr;
   height: 100%;
   overflow: hidden;
   background: #050811;
+}
+
+.admin-chat-panel.hidden {
+  display: none !important;
 }
 
 @media (max-width: 900px) {

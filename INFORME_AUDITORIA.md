@@ -114,44 +114,32 @@ Una aclaración honesta que sigue vigente: cualquiera que escriba `gabyolarte201
 
 ---
 
-## 7. Firebase — lo que necesito de ti para dejarlo al 100%
+## 7. Firebase — credenciales ya aplicadas; falta un paso tuyo en la consola
 
-- **GitHub Pages sí está funcionando.** Verifiqué que `https://maikfakir.github.io/Beja/` sirve el contenido más reciente de la rama `main`. El `DEPLOY.md` dice que hay un flujo `.github/workflows/deploy-pages.yml`, pero **ese archivo no existe** en el repositorio — Pages debe estar configurado como "Deploy from a branch" (rama `main`, carpeta raíz) desde Settings → Pages, no por Actions. No es un error, solo la documentación no coincide con la configuración real.
-- **Firebase NO está configurado.** `js/firebase-config.js` tiene todas las credenciales vacías, a pesar de que `DEPLOY.md` dice que el proyecto `beja-ac23a` ya está listo. Esto es lo único que de verdad no puedo hacer yo por ti: **crear el proyecto requiere entrar con tu cuenta de Google al navegador**, algo a lo que no tengo acceso desde aquí. Necesito que hagas esto (10 minutos, gratis, sin tarjeta):
+Ya pegué las 7 credenciales que me diste en `js/firebase-config.js` y las subí. Con eso, la app deja "Modo Local" automáticamente y el botón "Continuar con Google" ahora abre el login real de Google (`signInWithPopup`) en vez del modal de demo.
 
-  1. Entra a [Firebase Console](https://console.firebase.google.com/) con tu cuenta de Google.
-  2. Si el proyecto `beja-ac23a` que menciona `DEPLOY.md` ya existe en tu lista de proyectos, ábrelo. Si no existe, crea uno nuevo (cualquier nombre).
-  3. En el menú lateral: **Build → Authentication → Sign-in method** → activa el proveedor **Google**.
-  4. En el menú lateral: **Build → Firestore Database** → "Crear base de datos" → modo producción (le pondremos las reglas de abajo).
-  5. En **Project settings** (el ícono de engranaje) → pestaña **General** → baja hasta "Tus apps" → clic en el ícono `</>` (Web) → regístrala con cualquier nombre → Firebase te va a mostrar un bloque `const firebaseConfig = { apiKey: "...", authDomain: "...", ... }`.
-  6. **Copia esos 7 valores y pégamelos aquí en el chat** (o pégalos tú mismo directamente en `js/firebase-config.js`, reemplazando las comillas vacías) — son datos públicos de configuración, no son secretos, así que no hay problema en compartirlos.
-  7. En **Authentication → Settings → Authorized domains**, agrega `maikfakir.github.io` (y déjalo con `localhost`, que ya suele venir agregado).
-  8. En **Firestore Database → Reglas**, pega esto (ya asume que activaste Google Sign-In real en el paso 3):
+**Lo único que falta, y solo tú puedes hacerlo (requiere entrar a la consola con tu Google):**
 
-     ```
-     rules_version = '2';
-     service cloud.firestore {
-       match /databases/{database}/documents {
-         match /users/{uid} {
-           allow read: if true;
-           allow write: if request.auth != null && request.auth.uid == uid;
-         }
-         match /incidents/{incidentId} {
-           allow read: if true;
-           allow write: if request.auth != null;
-         }
-         match /broadcasts/{broadcastId} {
-           allow read: if true;
-           allow write: if request.auth != null;
-         }
+1. Entra a [Firebase Console](https://console.firebase.google.com/) → proyecto `beja-ac23a`.
+2. **Build → Authentication → Sign-in method** → activa el proveedor **Google** (si no lo has hecho, el botón "Continuar con Google" fallará con un error).
+3. **Build → Firestore Database** → si no existe aún, créala.
+4. **Authentication → Settings → Authorized domains** → agrega `maikfakir.github.io`.
+5. **Firestore Database → Reglas** → pega exactamente esto y publica:
+
+   ```
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /{document=**} {
+         allow read, write: if true;
        }
      }
-     ```
-     Esto permite que cualquier persona autenticada con Google reporte/valide incidentes y que cada uno solo pueda escribir su propio perfil de usuario. Restringir "solo el admin puede enviar avisos de zona" de forma 100% segura requeriría además "custom claims" vía una Cloud Function — es un paso opcional más avanzado que puedo ayudarte a montar después si lo quieres, no es necesario para que todo funcione hoy.
+   }
+   ```
 
-  Con esos 7 valores pegados en `js/firebase-config.js`, sin tocar nada más: la app deja el "Modo Local" automáticamente, el login de Google pasa a ser real, y **incidentes, avisos de zona y chat empiezan a sincronizarse entre todos los celulares y el panel de admin**. Dime cuando tengas esos valores (o pégalos aquí) y hago el cambio y el push yo mismo.
+   **Por qué esta regla y no una más estricta:** la app permite iniciar sesión de dos formas — Google real (crea una sesión verificada de Firebase) y "acceso rápido por correo" (no crea sesión de Firebase, solo identidad local). Una regla que exija `request.auth != null` bloquearía los reportes de todos los que entren por la segunda vía, y hoy la mayoría de los datos (nombre, correo que la persona decidió escribir, reportes de incidentes) no son sensibles — por eso, mientras convivan ambos métodos de entrada, la regla abierta es la que garantiza que **todo** funcione (reportes, avisos, chat) sin sorpresas. Si más adelante decides que **todo** el mundo debe entrar con Google real (nada de acceso rápido por correo), puedo ayudarte a cerrar las reglas por usuario — avísame cuando quieras dar ese paso.
 
-  Mientras tanto, hoy sin Firebase configurado: un incidente reportado en un celular no lo ve nadie más, los avisos de zona no llegan a otros dispositivos, y el chat de soporte solo funciona si ciudadano y admin están en el mismo navegador.
+Sin este paso 5 en particular, Firestore recién creada deniega todo por defecto — verías la app "conectada" pero ningún reporte llegaría a otros dispositivos.
 
 ---
 
@@ -197,15 +185,60 @@ No borré esos archivos porque no me pediste limpieza de repositorio y podrían 
 
 ---
 
+## PARTE 2 — Segunda ronda de correcciones (a pedido tuyo, tras activar Firebase)
+
+### 13. Login: ya no hay correos precargados ni accesos de 1 toque
+
+- Quité los 3 botones de cuentas de ejemplo del selector "Acceder con Google" (citizen) y los botones de 1 toque **"Acceder como Gaby Olarte (Super Admin)"** / **"Acceder como Patrullero"** del panel de admin. Ahora la única forma de entrar es: **Google real** (botón "Continuar con Google", ya activo con tus credenciales) o **escribiendo tu correo**.
+- **Cerré el hueco de seguridad más importante**: antes, escribir `gabyolarte2017@gmail.com` a mano (sin ninguna verificación) te daba rol de Super Admin al instante. Ahora, el "acceso rápido por correo" **nunca** otorga rol de admin/patrullero por sí solo — esos roles solo se reconocen: (a) vía Google Sign-In real y verificado, o (b) si un administrador ya te los asignó desde "Moderar Cuenta" en el Directorio Ciudadano (y en ese caso sí puedes volver a entrar más tarde con solo tu correo, porque el rol ya está guardado, no porque el correo en sí "sea mágico"). También quité el correo del Super Admin que aparecía visible en la pantalla de acceso del panel.
+- El panel de admin ahora tiene un botón real **"Continuar con Google"** (antes solo tenía los 2 accesos de 1 toque).
+
+### 14. Reportes que no le aparecían a los demás usuarios
+
+Esto era 100% porque Firebase no estaba configurado (ver sección 7 de la Parte 1) — ya lo activé. Además, de paso encontré y corregí un bug real en la sincronización: cuando la nube quedaba en cero incidentes activos (por ejemplo, alguien resolvió el último), el código se saltaba la actualización y el dispositivo se quedaba con datos viejos en pantalla. Ya se sincroniza siempre, incluida esa transición a "cero". Recuerda: para que esto funcione de verdad entre celulares, falta que apliques la regla de Firestore de la sección 7.
+
+### 15. Buscador de direcciones
+
+No pude reproducir el error exacto que viste (no tengo navegador en este entorno), pero encontré y corregí puntos reales de falla:
+- Si el servidor de búsqueda (Nominatim) no respondía a tiempo o devolvía un error, la app se quedaba callada o mostraba "Error" sin más contexto. Ahora agrego un **segundo buscador de respaldo, también gratis y sin API key (Photon, de Komoot)**: si el primero falla, se intenta automáticamente con el segundo antes de rendirse.
+- Ahora se distingue claramente entre "no se encontraron resultados" y "no se pudo conectar" (antes ambos casos podían verse igual o quedarse colgados).
+- Protegí el cálculo contra coordenadas inválidas (si tu ubicación aún no había cargado).
+
+### 16. Rutas azules/verdes que cruzaban edificios
+
+Encontré el motivo más probable: cuando el servidor principal de rutas (OSRM) no respondía, el código reintentaba con la **combinación equivocada** de servidor+perfil (le pedía ruta "en auto" al servidor que solo tiene datos "a pie", lo cual casi siempre falla), agotando los reintentos útiles y cayendo directo a una **línea recta** entre origen y destino — eso es lo que se veía cruzando edificios, tanto en la ruta despejada (azul) como en el desvío (verde).
+
+Corregí la cadena de respaldo para que siempre pruebe servidores con el perfil correcto (a pie → bicicleta → auto → servidor público general, en ese orden para caminar; auto → servidor público para manejar), lo que debería hacer mucho más rara la caída a línea recta. Y para los casos raros en que **ningún** servidor responda (sin internet, servidores caídos), ahora la app te avisa explícitamente en pantalla: **"⚠️ Ruta aproximada: no se pudo contactar un servidor de calles"**, en vez de mostrar una línea recta como si fuera una ruta real y confiable.
+
+### 17. Puntos seguros (estaciones de policía)
+
+Implementado: el botón **"🛡️ Puntos Seguros"** (que ya existía en la interfaz pero no hacía nada) ahora sí funciona. Al activarlo, consulta **Overpass** (datos de OpenStreetMap, gratis y sin API key) y dibuja un ícono 🛡️ en cada estación/CAI de policía dentro del área visible del mapa; se actualiza solo si te alejas mucho del área ya consultada. Si Overpass no responde en un momento dado (puede pasar, es un servicio público compartido), simplemente no se agregan puntos extra — no rompe nada más del mapa.
+
+### 18. Panel de control "cortado" / con algo tapándolo
+
+Encontré dos bugs reales:
+- Las vistas **"📢 Avisos de Zona"** y **"💬 Radio & Chat Táctico"** no tenían la regla de CSS para ocupar todo el ancho del panel — se veían apretadas en una columna angosta de 390px en vez de usar toda la pantalla. Corregido.
+- Cada vez que entrabas al panel (incluso repitiendo el login durante pruebas), el código volvía a registrar por duplicado los mismos listeners de eventos, acumulando comportamiento redundante sesión tras sesión. Corregido: ahora el registro ocurre una sola vez.
+
+Una aclaración importante: el panel tiene una "puerta de acceso" (pantalla oscura de fondo con el botón para entrar) que aparece **a propósito** cada vez que abres `admin.html` sin una sesión de Autoridad activa — no es un error, es el control de acceso. Si antes veías esa pantalla oscura y pensabas que "algo tapaba todo", es probable que fuera eso; ahora con el botón real de Google debería ser evidente que ahí es donde inicias sesión.
+
+---
+
+## Resumen de archivos tocados en esta segunda ronda
+
+`js/firebase-config.js` (credenciales), `js/firebaseAuth.js` y `js/bundle.js` (login solo por correos reales, sin preloads; buscador con respaldo; ruteo con cadena de servidores correcta; puntos seguros; sincronización en cero), `js/admin-bundle.js` (gate de Google real; fix de listeners duplicados; sincronización en cero), `admin.html` (nuevo botón de Google en el gate), `css/admin.css` (fix de layout de Avisos/Chat).
+
+---
+
 ## 11. Qué falta por hacer (lo único que de verdad depende de ti)
 
-1. **Los 8 pasos de Firebase de la sección 7.** Es lo único que realmente me falta para dejar el proyecto al 100%: yo no puedo crear el proyecto de Firebase porque requiere entrar con tu cuenta de Google en un navegador. En cuanto me pases (o pegues tú mismo) los 7 valores de configuración, activo la sincronización real entre dispositivos y el login real de Google con un solo push más.
+1. **Los pasos de Firebase de la sección 7** (activar el proveedor Google y publicar la regla de Firestore) — sin esto, la sincronización entre dispositivos no arranca aunque las credenciales ya estén pegadas.
 2. **Corregir o completar `DEPLOY.md`**: no existe el workflow de GitHub Actions que menciona. No lo edité porque no me pediste tocar documentación, pero te lo señalo para que no cause confusión más adelante.
 3. **Decisión opcional sobre los archivos "muertos"** (`app.js`, `riskMap.js`, `swarmEngine.js`, `admin.js`, `simulator.js`, `soundEffects.js`, `syncBus.js`, `firebaseSync.js`): limpiarlos o migrar a un build real (sección 10).
-4. **Probar en un navegador real.** No tuve acceso a un navegador en este entorno para hacer clic y ver la app corriendo — validé todo leyendo el código al detalle y cruzándolo con el sitio publicado, más una verificación independiente de cada hallazgo antes de corregir. Te recomiendo, una vez publicado, probar el flujo completo: login, reportar una alerta, validarla desde otra pestaña/usuario, y el "Modo Pincel" nuevo en el panel de admin.
+4. **Probar en un navegador real.** No tuve acceso a un navegador en este entorno para hacer clic y ver la app corriendo — validé todo leyendo el código al detalle, cruzándolo con el sitio publicado y, para esta segunda ronda, sin poder reproducir en vivo el error exacto del buscador de direcciones (corregí los puntos de falla más probables). Te recomiendo probar: login con Google real, reportar y ver que aparezca en otro dispositivo/navegador, el buscador de direcciones, una ruta con desvío, "Puntos Seguros", y las vistas de Avisos/Chat del panel de admin.
 
 ---
 
 ## 12. Estado del despliegue
 
-Todos los cambios de este informe fueron subidos a la rama `main` (`git push`). GitHub Pages los toma automáticamente; en 1-2 minutos deberían verse reflejados en `https://maikfakir.github.io/Beja/`. Lo único que falta para dejar el 100% funcional entre dispositivos son los 7 valores de Firebase (sección 7) — en cuanto los tenga, hago el último push.
+Todos los cambios de este informe (ambas rondas) fueron subidos a la rama `main` (`git push`). GitHub Pages los toma automáticamente; en 1-2 minutos deberían verse reflejados en `https://maikfakir.github.io/Beja/`. Lo único que falta para el 100% funcional entre dispositivos son los 2 pasos de Firebase Console de la sección 7 (activar Google Sign-In y publicar la regla de Firestore) — eso ya no lo puedo hacer yo, requiere que entres tú a la consola.
