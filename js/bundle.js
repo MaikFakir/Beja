@@ -741,13 +741,12 @@
           attributionControl: false
         });
 
-        // 100% Free CartoDB Dark Matter Tile Layer (Zero API Key Required - Sleek Cyberpunk Dark Theme)
-        const freeTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-          subdomains: 'abcd',
-          maxZoom: 20,
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-          className: 'colmena-dark-tiles',
-          errorTileUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+        // 100% Free OpenStreetMap High-Contrast Tactical Cyber Tiles (Zero API Key - Zero Watermarks)
+        const freeTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          subdomains: 'abc',
+          maxZoom: 19,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          className: 'colmena-dark-tiles'
         });
         freeTileLayer.addTo(this.map);
 

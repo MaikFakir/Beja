@@ -9,11 +9,11 @@
  */
 
 window.COLMENA_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyBiuova0zv-O5Z7XzzzDVlAoTNOfladgoY",
-  authDomain: "beja-ac23a.firebaseapp.com",
-  projectId: "beja-ac23a",
-  storageBucket: "beja-ac23a.firebasestorage.app",
-  messagingSenderId: "89792455926",
-  appId: "1:89792455926:web:a32b1fe047042c586fb8d7",
-  measurementId: "G-1BKEQNP7TG"
+  apiKey: "",
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: "",
+  measurementId: ""
 };

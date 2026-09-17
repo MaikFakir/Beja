@@ -1394,3 +1394,12 @@ html, body.admin-body {
   color: #ff5c77;
 }
 
+/* 100% Free OpenStreetMap High-Contrast Tactical Cyber Map (Zero API Key - Zero Watermarks) */
+.leaflet-tile-pane .colmena-dark-tiles {
+  filter: brightness(0.6) invert(1) contrast(2.5) hue-rotate(200deg) saturate(0.3) brightness(0.75);
+}
+
+.leaflet-container {
+  background: #070a12 !important;
+}
+
