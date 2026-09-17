@@ -47,11 +47,12 @@
         </div>
       </div>
 
-      <!-- Desktop Header Navigation Links (Mockup: Mapa, Alertas, Comunidad) -->
+      <!-- Desktop Header Navigation Links (Mockup: Mapa, Alertas, Comunidad, Soporte) -->
       <nav class="desktop-header-nav" aria-label="Navegación principal de escritorio">
         <button type="button" class="header-nav-link active" data-tab="map" id="h-nav-map">Mapa</button>
         <button type="button" class="header-nav-link" data-tab="report" id="h-nav-alerts">Alertas</button>
         <button type="button" class="header-nav-link" data-tab="profile" id="h-nav-community">Comunidad</button>
+        <button type="button" class="header-nav-link" data-tab="chat" id="h-nav-support">Soporte</button>
       </nav>
 
       <div class="header-actions">
@@ -376,83 +377,75 @@
         </section>
 
         <!-- ====================================================================
-             TAB 5: COMUNICADOR VECINAL, RADIO TÁCTICO & PANEL DE CONTACTOS
+             TAB 5: MESA DE AYUDA Y ATENCIÓN A SOPORTE BEJA (CANAL EXCLUSIVO)
              ==================================================================== -->
-        <section class="tab-panel" id="tab-chat" aria-label="Comunicador Vecinal y Radio Táctico">
-          <div class="chat-module-container">
-            <!-- Header with Active Context Info -->
-            <div class="chat-header-bar">
+        <section class="tab-panel" id="tab-chat" aria-label="Mesa de Ayuda y Atención a Soporte Oficial Beja">
+          <div class="chat-module-container support-desk-container">
+            <!-- Header with Official Support Status -->
+            <div class="chat-header-bar support-header-bar">
               <div class="chat-active-title">
-                <span class="chat-active-icon" id="citizen-chat-icon">💬</span>
+                <span class="chat-active-icon support-active-icon" id="citizen-chat-icon">🎧</span>
                 <div>
-                  <h3 id="citizen-chat-title">Canal General de la Colmena</h3>
-                  <p id="citizen-chat-subtitle">Comunidad vecinal abierta y coordinación ciudadana</p>
+                  <h3 id="citizen-chat-title">Atención & Soporte Beja 24/7</h3>
+                  <p id="citizen-chat-subtitle">Canal oficial y confidencial de atención ciudadana y técnica</p>
                 </div>
               </div>
-              <button class="chat-toggle-contacts-btn" id="btn-toggle-contacts-view">
-                👥 Contactos (<span id="chat-contacts-count">4</span>)
-              </button>
+              <div class="support-status-badge" id="support-status-indicator">
+                <span class="status-indicator-dot"></span>
+                <span>En Línea</span>
+              </div>
             </div>
 
-            <!-- Channels Selector Strip -->
+            <!-- Support Official Notice Banner -->
+            <div class="support-notice-banner">
+              <span class="notice-icon">🛡️</span>
+              <div class="notice-text">
+                <strong>Canal Exclusivo de Soporte & Despacho</strong>
+                <span>Tus mensajes son atendidos directamente por el equipo técnico y operadores de guardia.</span>
+              </div>
+            </div>
+
+            <!-- Support Categories Selector Strip -->
             <div class="chat-channels-bar" role="tablist">
-              <button class="chat-channel-btn active" data-channel="general">
-                <span>💬</span> General
+              <button class="chat-channel-btn active" data-channel="soporte_general">
+                <span>🎧</span> Atención General
               </button>
-              <button class="chat-channel-btn channel-urgent" data-channel="emergencias">
-                <span>🚨</span> Emergencias SOS
+              <button class="chat-channel-btn" data-channel="soporte_tecnico">
+                <span>🛠️</span> Soporte Técnico & GPS
               </button>
-              <button class="chat-channel-btn channel-patrol" data-channel="cuadrante">
-                <span>🚓</span> Enlace Cuadrante
+              <button class="chat-channel-btn channel-urgent" data-channel="soporte_emergencias">
+                <span>🚨</span> Asistencia Cuadrante
               </button>
             </div>
 
-            <!-- Contacts Directory Drawer / Panel (Segmented by Roles) -->
-            <div class="chat-contacts-drawer hidden" id="chat-contacts-drawer">
-              <div class="contacts-drawer-header">
-                <h4>👥 Directorio de Contactos Colmena</h4>
-                <button class="btn-close-contacts" id="btn-close-contacts" aria-label="Cerrar contactos">✕</button>
-              </div>
-              <!-- Role Segmenter Chips -->
-              <div class="chat-role-filters" role="group" aria-label="Filtro de contactos por rol">
-                <button class="role-filter-chip active" data-role="ALL">Todos</button>
-                <button class="role-filter-chip" data-role="citizen">👤 Ciudadanos</button>
-                <button class="role-filter-chip" data-role="patrol">🚓 Patrullas</button>
-                <button class="role-filter-chip" data-role="admin">🛡️ Admins</button>
-              </div>
-              <div class="contacts-list-scroll" id="citizen-contacts-list">
-                <!-- Rendered dynamically by bundle.js -->
-              </div>
-            </div>
-
-            <!-- Messages Stream -->
-            <div class="chat-messages-viewport" id="citizen-chat-messages">
+            <!-- Messages Stream (Support Tickets / Assistance Conversation) -->
+            <div class="chat-messages-viewport support-messages-viewport" id="citizen-chat-messages">
               <!-- Rendered dynamically by bundle.js -->
             </div>
 
-            <!-- Chat Message Composer -->
+            <!-- Support Message Composer Form -->
             <form class="chat-composer-form" id="citizen-chat-form" onsubmit="return false;">
               <!-- Priority Selector -->
               <div class="chat-priority-bar">
-                <span class="priority-label">Prioridad:</span>
+                <span class="priority-label">Tipo de Consulta:</span>
                 <label class="priority-chip priority-normal active">
                   <input type="radio" name="chat-priority" value="NORMAL" checked>
-                  <span>💬 Normal</span>
+                  <span>💬 Consulta General</span>
                 </label>
                 <label class="priority-chip priority-warning">
                   <input type="radio" name="chat-priority" value="WARNING">
-                  <span>⚠️ Precaución</span>
+                  <span>⚠️ Inconveniente</span>
                 </label>
                 <label class="priority-chip priority-emergency">
                   <input type="radio" name="chat-priority" value="EMERGENCY">
-                  <span>🚨 Emergencia</span>
+                  <span>🚨 Asistencia Crítica</span>
                 </label>
               </div>
 
               <div class="chat-input-row">
-                <input type="text" id="citizen-chat-input" class="tactical-input chat-input-field" placeholder="Escribe un mensaje para los vecinos y patrullas..." maxlength="300" required autocomplete="off">
-                <button type="submit" class="btn-chat-send" id="btn-citizen-chat-send" title="Enviar mensaje">
-                  <span>Enviar</span> ➔
+                <input type="text" id="citizen-chat-input" class="tactical-input chat-input-field" placeholder="Escribe tu consulta o problema al equipo de soporte..." maxlength="300" required autocomplete="off">
+                <button type="submit" class="btn-chat-send" id="btn-citizen-chat-send" title="Enviar a Soporte">
+                  <span>Consultar</span> ➔
                 </button>
               </div>
             </form>
@@ -655,9 +648,9 @@
         <span>Panal</span>
       </button>
 
-      <button class="nav-tab-item" data-tab="chat" id="nav-btn-chat" title="Chat y Directorio">
-        <span class="nav-icon">🛡️</span>
-        <span>Perfil</span>
+      <button class="nav-tab-item" data-tab="chat" id="nav-btn-chat" title="Atención a Soporte Beja 24/7">
+        <span class="nav-icon">🎧</span>
+        <span>Soporte</span>
       </button>
 
       <!-- Preserved for JS routing compatibility -->

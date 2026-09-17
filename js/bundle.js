@@ -2230,6 +2230,7 @@
       const dNavReport = document.getElementById('d-nav-report');
       const dNavProfile = document.getElementById('d-nav-profile');
       const dNavChat = document.getElementById('d-nav-chat');
+      const hNavSupport = document.getElementById('h-nav-support');
       const dLinkAdmin = document.getElementById('link-admin-panel');
 
       const mNavReport = document.getElementById('nav-btn-report');
@@ -2237,19 +2238,20 @@
       const mNavChat = document.getElementById('nav-btn-chat');
 
       if (isGuest) {
-        // Guests only see Map and Routes
+        // Guests see Map, Routes and Support Help Desk
         if (dNavReport) dNavReport.style.display = 'none';
         if (dNavProfile) dNavProfile.style.display = 'none';
-        if (dNavChat) dNavChat.style.display = 'none';
+        if (dNavChat) dNavChat.style.display = '';
+        if (hNavSupport) hNavSupport.style.display = '';
         if (dLinkAdmin) dLinkAdmin.style.display = 'none';
 
         if (mNavReport) mNavReport.style.display = 'none';
         if (mNavProfile) mNavProfile.style.display = 'none';
-        if (mNavChat) mNavChat.style.display = 'none';
+        if (mNavChat) mNavChat.style.display = '';
 
         const activeTab = document.querySelector('.desktop-tab-btn.active')?.dataset?.tab ||
                           document.querySelector('.nav-tab-item.active')?.dataset?.tab;
-        if (activeTab === 'report' || activeTab === 'profile' || activeTab === 'chat') {
+        if (activeTab === 'report' || activeTab === 'profile') {
           document.getElementById('d-nav-map')?.click() || document.getElementById('nav-btn-map')?.click();
         }
       } else if (isCitizen) {
@@ -2257,6 +2259,7 @@
         if (dNavReport) dNavReport.style.display = '';
         if (dNavProfile) dNavProfile.style.display = '';
         if (dNavChat) dNavChat.style.display = '';
+        if (hNavSupport) hNavSupport.style.display = '';
         if (dLinkAdmin) dLinkAdmin.style.display = 'none';
 
         if (mNavReport) mNavReport.style.display = '';
@@ -2267,6 +2270,7 @@
         if (dNavReport) dNavReport.style.display = '';
         if (dNavProfile) dNavProfile.style.display = '';
         if (dNavChat) dNavChat.style.display = '';
+        if (hNavSupport) hNavSupport.style.display = '';
         if (dLinkAdmin) dLinkAdmin.style.display = '';
 
         if (mNavReport) mNavReport.style.display = '';
@@ -2529,8 +2533,8 @@
           return;
         }
 
-        // Enforce guest role permissions
-        if (!this.currentUser && (target === 'report' || target === 'profile' || target === 'chat')) {
+        // Enforce guest role permissions (report & profile require login; chat/support is accessible)
+        if (!this.currentUser && (target === 'report' || target === 'profile')) {
           this.showToast('🔒 Registro requerido. Inicia sesión con Google para acceder.', 'warning');
           if (firebaseAuth.openGoogleChooser) {
             firebaseAuth.openGoogleChooser().then(u => {
@@ -2575,7 +2579,7 @@
             if (target === 'report') drawerTitle.innerHTML = '📢 Zumbidos & Alertas';
             else if (target === 'routes') drawerTitle.innerHTML = '🛡️ Navegación & Rutas Seguras';
             else if (target === 'profile') drawerTitle.innerHTML = '🐝 Panal & Reputación';
-            else if (target === 'chat') drawerTitle.innerHTML = '👤 Perfil & Contactos Ciudadanos';
+            else if (target === 'chat') drawerTitle.innerHTML = '🎧 Atención & Soporte Beja 24/7';
             else drawerTitle.innerHTML = '🛡️ Panel Colmena';
           }
         }
@@ -3432,13 +3436,24 @@
 
     setupChat() {
       const channelBtns = document.querySelectorAll('.chat-channel-btn');
-      const toggleContactsBtn = document.getElementById('btn-toggle-contacts-view');
-      const closeContactsBtn = document.getElementById('btn-close-contacts');
-      const contactsDrawer = document.getElementById('chat-contacts-drawer');
-      const roleFilterChips = document.querySelectorAll('.role-filter-chip');
       const chatForm = document.getElementById('citizen-chat-form');
       const chatInput = document.getElementById('citizen-chat-input');
       const priorityRadios = document.querySelectorAll('input[name="chat-priority"]');
+
+      // Conectar botón de Centros de Ayuda en el footer de escritorio
+      document.getElementById('link-help')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const tabBtn = document.getElementById('nav-btn-chat') || document.getElementById('h-nav-support');
+        if (tabBtn) tabBtn.click();
+      });
+
+      // Defensive compatibility bindings for legacy contacts controls
+      const toggleContactsBtn = document.getElementById('btn-toggle-contacts-view');
+      const closeContactsBtn = document.getElementById('btn-close-contacts');
+      const roleFilterChips = document.querySelectorAll('.role-filter-chip');
+      toggleContactsBtn?.addEventListener('click', () => {});
+      closeContactsBtn?.addEventListener('click', () => {});
+      roleFilterChips.forEach(chip => chip.addEventListener('click', () => {}));
 
       channelBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -3449,30 +3464,6 @@
           if (window.chatService) window.chatService.selectChannel(channel);
           this.updateChatHeader(channel);
           this.renderChatMessages();
-          if (contactsDrawer) contactsDrawer.classList.add('hidden');
-        });
-      });
-
-      toggleContactsBtn?.addEventListener('click', () => {
-        sounds.playClick();
-        if (contactsDrawer) {
-          contactsDrawer.classList.toggle('hidden');
-          if (!contactsDrawer.classList.contains('hidden')) {
-            this.renderChatContacts('ALL');
-          }
-        }
-      });
-      closeContactsBtn?.addEventListener('click', () => {
-        sounds.playClick();
-        if (contactsDrawer) contactsDrawer.classList.add('hidden');
-      });
-
-      roleFilterChips.forEach(chip => {
-        chip.addEventListener('click', () => {
-          sounds.playClick();
-          roleFilterChips.forEach(c => c.classList.remove('active'));
-          chip.classList.add('active');
-          this.renderChatContacts(chip.dataset.role);
         });
       });
 
@@ -3507,30 +3498,26 @@
       }
 
       this.renderChatMessages();
-      this.renderChatContacts('ALL');
+      this.updateChatHeader(window.chatService ? window.chatService.activeChannelId : 'soporte_general');
     }
 
-    updateChatHeader(channelId, contact = null) {
+    updateChatHeader(channelId) {
       const title = document.getElementById('citizen-chat-title');
       const subtitle = document.getElementById('citizen-chat-subtitle');
       const icon = document.getElementById('citizen-chat-icon');
-      if (contact) {
-        if (title) title.textContent = `Chat Directo: ${contact.displayName || contact.email}`;
-        const roleName = contact.role === 'admin' ? 'Administrador' : (contact.role === 'patrol' ? 'Patrullero Cuadrante' : 'Ciudadano');
-        if (subtitle) subtitle.textContent = `Mensaje privado 1 a 1 (${roleName}) • ⭐ ${contact.trustScore || 100} pts`;
-        if (icon) icon.textContent = contact.role === 'patrol' ? '🚓' : (contact.role === 'admin' ? '🛡️' : '👤');
-      } else if (channelId === 'emergencias') {
-        if (title) title.textContent = 'Canal de Emergencias SOS 🚨';
-        if (subtitle) subtitle.textContent = 'Alertas prioritarias en progreso y solicitudes de auxilio';
+
+      if (channelId === 'soporte_tecnico') {
+        if (title) title.textContent = 'Soporte Técnico & GPS 🛠️';
+        if (subtitle) subtitle.textContent = 'Asistencia para mapa interactivo, geolocalización y cálculo de rutas';
+        if (icon) icon.textContent = '🛠️';
+      } else if (channelId === 'soporte_emergencias') {
+        if (title) title.textContent = 'Asistencia Táctica & Cuadrante 🚨';
+        if (subtitle) subtitle.textContent = 'Orientación para validación de alertas comunitarias y protocolos de auxilio';
         if (icon) icon.textContent = '🚨';
-      } else if (channelId === 'cuadrante') {
-        if (title) title.textContent = 'Enlace Cuadrante & Patrullas 🚓';
-        if (subtitle) subtitle.textContent = 'Canal directo de coordinación con autoridades del sector';
-        if (icon) icon.textContent = '🚓';
       } else {
-        if (title) title.textContent = 'Canal General de la Colmena 💬';
-        if (subtitle) subtitle.textContent = 'Comunidad vecinal abierta y coordinación ciudadana';
-        if (icon) icon.textContent = '💬';
+        if (title) title.textContent = 'Atención & Soporte Beja 24/7 🎧';
+        if (subtitle) subtitle.textContent = 'Canal oficial y confidencial de atención ciudadana y técnica';
+        if (icon) icon.textContent = '🎧';
       }
     }
 
@@ -3541,33 +3528,45 @@
       const messages = window.chatService.getMessagesForCurrentContext(myId);
 
       if (messages.length === 0) {
-        container.innerHTML = '<div style="text-align:center;padding:40px 10px;color:var(--text-muted);font-size:0.8rem;">Sin mensajes en esta conversación. ¡Sé el primero en escribir!</div>';
+        container.innerHTML = '<div style="text-align:center;padding:40px 10px;color:var(--text-muted);font-size:0.8rem;">Sin tickets en esta categoría. Escribe a Soporte Beja para recibir asistencia inmediata.</div>';
         return;
       }
 
       container.innerHTML = messages.map(m => {
-        const isSelf = (m.senderId === myId) || (this.currentUser && m.senderEmail && this.currentUser.email && m.senderEmail.toLowerCase() === this.currentUser.email.toLowerCase());
+        const isSupport = (m.senderRole === 'support' || m.senderId === 'beja_support_desk');
+        const isSelf = !isSupport && ((m.senderId === myId) || (this.currentUser && m.senderEmail && this.currentUser.email && m.senderEmail.toLowerCase() === this.currentUser.email.toLowerCase()));
         const timeStr = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const isEmergency = m.priority === 'EMERGENCY';
         const isWarning = m.priority === 'WARNING';
         const priorityClass = isEmergency ? 'priority-emergency' : (isWarning ? 'priority-warning' : 'priority-normal');
-        const roleBadge = m.senderRole === 'admin' 
-          ? '<span class="contact-role-badge badge-role-admin">🛡️ Admin</span>'
+        
+        const roleBadge = isSupport
+          ? '<span class="contact-role-badge badge-role-admin">🛡️ Soporte Verificado</span>'
           : (m.senderRole === 'patrol' 
             ? '<span class="contact-role-badge badge-role-patrol">🚓 Patrullero</span>'
-            : '<span class="contact-role-badge badge-role-citizen">👤 Vecino</span>');
+            : '<span class="contact-role-badge badge-role-citizen">👤 Usuario</span>');
+
+        const senderDisplayName = isSupport 
+          ? (m.senderName || 'Soporte Oficial Beja')
+          : (isSelf ? 'Tú (Consulta)' : (m.senderName || 'Usuario'));
+
+        const avatarSrc = isSupport ? 'assets/logo.svg' : (m.senderAvatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=anon');
+
+        // Formato básico de markdown simple
+        let formattedText = this.escapeHtml(m.text);
+        formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
         return `
-          <div class="chat-msg-row ${isSelf ? 'msg-self' : 'msg-other'}">
-            <img src="${m.senderAvatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=anon'}" alt="${m.senderName}" class="msg-avatar">
-            <div class="msg-bubble ${priorityClass}">
+          <div class="chat-msg-row ${isSelf ? 'msg-self' : (isSupport ? 'msg-support-official' : 'msg-other')}">
+            <img src="${avatarSrc}" alt="${senderDisplayName}" class="msg-avatar ${isSupport ? 'msg-avatar-support' : ''}">
+            <div class="msg-bubble ${priorityClass} ${isSupport ? 'msg-bubble-support' : ''}">
               <div class="msg-meta-row">
-                <span class="msg-sender-name">${isSelf ? 'Tú' : m.senderName}</span>
+                <span class="msg-sender-name ${isSupport ? 'sender-support-name' : ''}">${senderDisplayName}</span>
                 ${roleBadge}
-                ${isEmergency ? '<span class="msg-priority-badge badge-p-emergency">🚨 EMERGENCIA</span>' : (isWarning ? '<span class="msg-priority-badge badge-p-warning">⚠️ AVISO</span>' : '')}
+                ${isEmergency ? '<span class="msg-priority-badge badge-p-emergency">🚨 ASISTENCIA CRÍTICA</span>' : (isWarning ? '<span class="msg-priority-badge badge-p-warning">⚠️ AVISO</span>' : '')}
                 <span class="msg-time">${timeStr}</span>
               </div>
-              <div class="msg-text-content">${this.escapeHtml(m.text)}</div>
+              <div class="msg-text-content">${formattedText}</div>
             </div>
           </div>
         `;
@@ -3576,51 +3575,15 @@
       container.scrollTop = container.scrollHeight;
     }
 
-    renderChatContacts(roleFilter = 'ALL') {
-      const listEl = document.getElementById('citizen-contacts-list');
-      const countEl = document.getElementById('chat-contacts-count');
-      if (!listEl || !window.chatService) return;
-
-      const contacts = window.chatService.getContacts(roleFilter);
-      if (countEl) countEl.textContent = contacts.length;
-
-      if (contacts.length === 0) {
-        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:0.75rem;">Sin contactos para este rol.</div>';
-        return;
-      }
-
-      listEl.innerHTML = contacts.map(c => {
-        const isPatrol = c.role === 'patrol';
-        const isAdmin = c.role === 'admin';
-        const roleLabel = isAdmin ? '🛡️ Super Admin' : (isPatrol ? '🚓 Patrullero' : '👤 Ciudadano');
-        const badgeClass = isAdmin ? 'badge-role-admin' : (isPatrol ? 'badge-role-patrol' : 'badge-role-citizen');
-
-        return `
-          <div class="chat-contact-card" onclick="window.citizenApp.openDirectChat('${c.uid}')">
-            <img src="${c.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${c.uid}`}" alt="${c.displayName}" class="chat-contact-avatar">
-            <div class="chat-contact-info">
-              <h5>${c.displayName || c.email}</h5>
-              <p>📧 ${c.email}</p>
-              <div style="display:flex;gap:4px;align-items:center;">
-                <span class="contact-role-badge ${badgeClass}">${roleLabel}</span>
-                <span style="font-size:0.62rem;color:var(--color-safe);font-weight:700;">⭐ ${c.trustScore || 100} pts</span>
-              </div>
-            </div>
-            <button style="background:transparent;border:none;font-size:1.1rem;color:var(--color-info);cursor:pointer;" title="Abrir chat">💬</button>
-          </div>
-        `;
-      }).join('');
+    renderChatContacts() {
+      // Método reservado por compatibilidad: el chat es exclusivo para soporte
     }
 
-    openDirectChat(uid) {
-      if (!window.chatService) return;
-      const contacts = window.chatService.getContacts('ALL');
-      const contact = contacts.find(c => c.uid === uid);
-      if (contact) {
-        window.chatService.selectDirectContact(contact);
-        this.updateChatHeader(null, contact);
-        document.querySelectorAll('.chat-channel-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById('chat-contacts-drawer')?.classList.add('hidden');
+    openDirectChat() {
+      // Método reservado por compatibilidad: redirige a la mesa de soporte
+      if (window.chatService) {
+        window.chatService.selectChannel('soporte_general');
+        this.updateChatHeader('soporte_general');
         this.renderChatMessages();
       }
     }

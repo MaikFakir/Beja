@@ -5163,3 +5163,91 @@ html, body.citizen-body {
   from { transform: scale(0.95); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
+
+/* ==========================================================================
+   BEJA SUPPORT DESK & HELP CENTER (EXCLUSIVO ATENCIÓN A SOPORTE)
+   ========================================================================== */
+.support-desk-container {
+  border-color: rgba(245, 158, 11, 0.25) !important;
+}
+
+.support-header-bar {
+  background: linear-gradient(135deg, #0c1322 0%, #111a30 100%) !important;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.2) !important;
+}
+
+.support-active-icon {
+  background: rgba(245, 158, 11, 0.12) !important;
+  border-color: rgba(245, 158, 11, 0.4) !important;
+  font-size: 1.3rem !important;
+}
+
+.support-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #10b981;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-indicator-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulse-dot 1.8s infinite;
+}
+
+.support-notice-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(245, 158, 11, 0.08);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.15);
+  font-size: 0.72rem;
+  color: #cbd5e1;
+}
+
+.support-notice-banner .notice-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.support-notice-banner .notice-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.support-notice-banner .notice-text strong {
+  color: #f59e0b;
+  font-weight: 700;
+}
+
+/* Support Message Bubbles */
+.chat-msg-row.msg-support-official .msg-bubble {
+  background: #0f1c2e;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.msg-avatar-support {
+  background: #0b1122;
+  padding: 2px;
+  border: 1.5px solid #f59e0b !important;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+}
+
+.sender-support-name {
+  color: #fbbf24 !important;
+  font-weight: 800 !important;
+}
+
