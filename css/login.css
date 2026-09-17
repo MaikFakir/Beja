@@ -760,3 +760,233 @@ body.login-landing-body {
     padding: 18px 14px;
   }
 }
+
+/* ==========================================================================
+   GOOGLE ACCOUNT CHOOSER MODAL (1-TAP MOBILE & DESKTOP AUTH)
+   ========================================================================== */
+.google-chooser-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 15, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  padding: 16px;
+  animation: fadeInModal 0.2s ease-out;
+}
+
+.google-chooser-backdrop.hidden {
+  display: none !important;
+}
+
+.google-chooser-sheet {
+  background: #1a2234;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: scaleUpModal 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.google-chooser-header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.google-brand-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.btn-close-google-chooser {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.8rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.btn-close-google-chooser:hover {
+  color: #fff;
+}
+
+.google-accounts-list {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.google-account-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.google-account-item:hover, .google-account-item:active {
+  background: rgba(0, 245, 160, 0.1);
+  border-color: rgba(0, 245, 160, 0.35);
+  transform: translateY(-1px);
+}
+
+.google-account-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  background: #0f172a;
+  flex-shrink: 0;
+}
+
+.google-account-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.account-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.account-email {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge-role-pill {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.badge-role-pill.admin-pill {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ff5c77;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.badge-role-pill.patrol-pill {
+  background: rgba(0, 176, 255, 0.2);
+  color: #00b0ff;
+  border: 1px solid rgba(0, 176, 255, 0.4);
+}
+
+.badge-role-pill.citizen-pill {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.account-arrow {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.custom-google-account-section {
+  margin-top: 4px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+
+.btn-toggle-custom-google {
+  background: transparent;
+  border: none;
+  color: #38bdf8;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.btn-toggle-custom-google:hover {
+  text-decoration: underline;
+}
+
+.custom-email-drawer {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.google-custom-input {
+  flex: 1;
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #fff;
+  font-size: 0.88rem;
+}
+
+.google-custom-input:focus {
+  border-color: #38bdf8;
+  outline: none;
+}
+
+.btn-confirm-custom-google {
+  background: #0284c7;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0 16px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.google-chooser-footer {
+  padding: 12px 20px 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.72rem;
+  color: #64748b;
+  line-height: 1.4;
+  text-align: center;
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleUpModal {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}

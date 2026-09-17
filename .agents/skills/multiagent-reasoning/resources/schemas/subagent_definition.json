@@ -1,0 +1,139 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://antigravity.google/schemas/subagent-definition.v1.json",
+  "title": "AntigravitySubagentDefinitionRegistry",
+  "description": "JSON schema for Antigravity subagent definition registries and capability profiles.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "subagents"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "framework": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "last_updated": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "subagents": {
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        "^[a-z0-9_-]+$": {
+          "$ref": "#/definitions/SubagentProfile"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "definitions": {
+    "SubagentProfile": {
+      "type": "object",
+      "required": [
+        "role",
+        "description",
+        "capabilities",
+        "workspace_policy",
+        "system_prompt_ref"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "type": "string",
+          "minLength": 2,
+          "description": "Human-readable role name of the subagent archetype."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 10,
+          "description": "Detailed explanation of responsibilities and scope."
+        },
+        "capabilities": {
+          "type": "object",
+          "required": [
+            "enable_write_tools",
+            "enable_subagent_tools",
+            "enable_mcp_tools",
+            "allowed_tools"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "enable_write_tools": {
+              "type": "boolean",
+              "description": "Whether the agent has permission to modify workspace code/files."
+            },
+            "enable_subagent_tools": {
+              "type": "boolean",
+              "description": "Whether the agent can spawn nested subagents."
+            },
+            "enable_mcp_tools": {
+              "type": "boolean",
+              "description": "Whether the agent can invoke external Model Context Protocol tools."
+            },
+            "allowed_tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "uniqueItems": true,
+              "description": "Explicit whitelist of allowed tool names."
+            }
+          }
+        },
+        "workspace_policy": {
+          "type": "object",
+          "required": [
+            "read_scope",
+            "write_scope"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "read_scope": {
+              "type": "string",
+              "description": "Filesystem scope for read operations (e.g. 'workspace_root')."
+            },
+            "write_scope": {
+              "type": "string",
+              "description": "Filesystem scope for write operations (e.g. '.agents/<agent_name>/*' or 'workspace_root')."
+            }
+          }
+        },
+        "system_prompt_ref": {
+          "type": "string",
+          "pattern": "^prompts/[a-z0-9_-]+\\.md$",
+          "description": "Relative path to markdown file containing the subagent system prompt template."
+        },
+        "default_timeout_seconds": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 3600,
+          "description": "Default timeout in seconds before escalation or cancellation."
+        },
+        "max_turns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum allowed conversational turns per task dispatch."
+        }
+      }
+    }
+  }
+}

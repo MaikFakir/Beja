@@ -10,6 +10,7 @@ export const INCIDENT_STATES = {
   PROBING: 'PROBING',                 // 1 report: Yellow preventive radar alert
   CRITICAL_SWARM: 'CRITICAL_SWARM',   // 2+ reports: Red emergency siren alert
   DISPATCHED: 'DISPATCHED',           // Patrol / Emergency unit en route
+  PATROL_ATTENDED: 'PATROL_ATTENDED', // Patrol has attended on site (Tactical Blue alert, calmed visual alarm, hotzone preserved)
   RESOLVED: 'RESOLVED',               // Handled & closed by authorities
   FALSE_ALARM: 'FALSE_ALARM'          // Dismissed / spam
 };
@@ -176,6 +177,57 @@ export class SwarmEngine {
   }
 
   /**
+   * Register patrol attended / on-site: switches incident to tactical BLUE,
+   * calms audible/visual alarms, but preserves the hotzone record on the map.
+   */
+  patrolIncident(incidentId, unitData = { code: 'PATRULLA-04', officer: 'Agente Morales' }) {
+    const incident = this.incidents.find(i => i.id === incidentId);
+    if (!incident) return null;
+
+    incident.status = INCIDENT_STATES.PATROL_ATTENDED;
+    incident.patrolUnit = {
+      ...unitData,
+      attendedAt: Date.now()
+    };
+    incident.updatedAt = Date.now();
+
+    this.saveIncidents();
+    syncBus.emit('INCIDENT_MUTATION', { incident });
+    syncBus.emit('PATROL_ATTENDED', { incident });
+    return incident;
+  }
+
+  /**
+   * Attend incident by a police patrol / security unit
+   * Turns the alert into TACTICAL BLUE (calms visual alarm, silences siren, preserves hotzone in history)
+   */
+  patrolIncident(incidentId, unitData = { code: 'PATRULLA-CUADRANTE', etaMinutes: 0 }) {
+    const incident = this.incidents.find(i => i.id === incidentId);
+    if (!incident) return null;
+
+    incident.status = INCIDENT_STATES.PATROL_ATTENDED;
+    incident.patrolAttendedAt = Date.now();
+    incident.attendedBy = unitData;
+    incident.updatedAt = Date.now();
+
+    // Preserve the incident hotzone in historical risk heatmap without aggressive alarm
+    this.history.push({
+      lat: incident.lat,
+      lng: incident.lng,
+      category: incident.category,
+      weight: 0.35, // Soft calm weight: preserves hotzone data without visual clutter
+      timestamp: Date.now(),
+      timeOfDay: new Date().getHours() >= 19 || new Date().getHours() <= 5 ? 'NIGHT' : 'DAY'
+    });
+    this.saveHistory();
+    this.saveIncidents();
+
+    syncBus.emit('INCIDENT_MUTATION', { incident, status: INCIDENT_STATES.PATROL_ATTENDED });
+    syncBus.emit('PATROL_ATTENDED_INCIDENT', { incident });
+    return incident;
+  }
+
+  /**
    * Mark incident as resolved
    */
   resolveIncident(incidentId, resolutionNotes = 'Atendido por cuadrante de seguridad') {
@@ -187,10 +239,15 @@ export class SwarmEngine {
     incident.resolutionNotes = resolutionNotes;
     incident.updatedAt = Date.now();
 
+    // Track dismissed/resolved ID permanently so it never re-appears on page reload
+    this.recordDismissedId(incidentId);
+
     // Reward reporters with Trust Score points
-    incident.reporters.forEach(r => {
-      this.updateTrustScore(r.userId, +10);
-    });
+    if (incident.reporters) {
+      incident.reporters.forEach(r => {
+        this.updateTrustScore(r.userId, +10);
+      });
+    }
 
     // Add to historical risk dataset for dynamic heatmaps
     this.history.push({
@@ -203,7 +260,7 @@ export class SwarmEngine {
     });
     this.saveHistory();
 
-    // Remove from active incidents list or keep marked
+    // Remove from active incidents list
     this.incidents = this.incidents.filter(i => i.id !== incidentId);
     this.saveIncidents();
 
@@ -219,10 +276,15 @@ export class SwarmEngine {
     const incident = this.incidents.find(i => i.id === incidentId);
     if (!incident) return null;
 
+    // Track dismissed/resolved ID permanently so it never re-appears on page reload
+    this.recordDismissedId(incidentId);
+
     // Penalize reporters
-    incident.reporters.forEach(r => {
-      this.updateTrustScore(r.userId, -30);
-    });
+    if (incident.reporters) {
+      incident.reporters.forEach(r => {
+        this.updateTrustScore(r.userId, -30);
+      });
+    }
 
     this.incidents = this.incidents.filter(i => i.id !== incidentId);
     this.saveIncidents();
@@ -230,6 +292,26 @@ export class SwarmEngine {
     syncBus.emit('INCIDENT_MUTATION', { incidentId, status: INCIDENT_STATES.FALSE_ALARM });
     syncBus.emit('INCIDENT_DISMISSED', { incidentId });
     return true;
+  }
+
+  recordDismissedId(id) {
+    try {
+      const raw = localStorage.getItem('colmena_dismissed_incident_ids_v2');
+      const set = raw ? JSON.parse(raw) : [];
+      if (!set.includes(id)) {
+        set.push(id);
+        localStorage.setItem('colmena_dismissed_incident_ids_v2', JSON.stringify(set));
+      }
+    } catch (e) {}
+  }
+
+  getDismissedIds() {
+    try {
+      const raw = localStorage.getItem('colmena_dismissed_incident_ids_v2');
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
   }
 
   /**
@@ -263,30 +345,74 @@ export class SwarmEngine {
     }
   }
 
+  /**
+   * Precise Lifecycle & Expiration Engine:
+   * - Probing (1 unconfirmed report): Dissolves after 10 minutes (prevents false lingering).
+   * - Critical Swarm (2+ reports): Auto-archives to history after 30 minutes.
+   * - Patrol Attended (Blue alert): Stays visible for 20 minutes to inform the community, then auto-archives to history.
+   */
   cleanupExpiredIncidents() {
     const now = Date.now();
     const active = [];
     let changed = false;
+    const dismissed = this.getDismissedIds();
 
     this.incidents.forEach(inc => {
-      // Auto-expire probing alerts after 10 minutes if no confirmation
-      if (inc.status === INCIDENT_STATES.PROBING && (now - inc.createdAt) > 10 * 60 * 1000) {
+      // If manually resolved/dismissed, drop it immediately
+      if (dismissed.includes(inc.id) || inc.status === INCIDENT_STATES.RESOLVED || inc.status === INCIDENT_STATES.FALSE_ALARM) {
         changed = true;
-      } else {
-        active.push(inc);
+        return;
       }
+
+      const ageMs = now - (inc.updatedAt || inc.createdAt);
+
+      // 1. Probing (1 report): Expire after 10 minutes if no second confirmation
+      if (inc.status === INCIDENT_STATES.PROBING && ageMs > 10 * 60 * 1000) {
+        changed = true;
+        this.recordDismissedId(inc.id);
+        return;
+      }
+
+      // 2. Critical Swarm & Dispatched: Auto-archive after 30 minutes
+      if ((inc.status === INCIDENT_STATES.CRITICAL_SWARM || inc.status === INCIDENT_STATES.DISPATCHED) && ageMs > 30 * 60 * 1000) {
+        changed = true;
+        this.history.push({
+          lat: inc.lat,
+          lng: inc.lng,
+          category: inc.category,
+          weight: 0.6,
+          timestamp: inc.createdAt,
+          timeOfDay: new Date(inc.createdAt).getHours() >= 19 || new Date(inc.createdAt).getHours() <= 5 ? 'NIGHT' : 'DAY'
+        });
+        this.recordDismissedId(inc.id);
+        return;
+      }
+
+      // 3. Patrol Attended: Active for 20 minutes, then archive
+      if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > 20 * 60 * 1000) {
+        changed = true;
+        this.recordDismissedId(inc.id);
+        return;
+      }
+
+      active.push(inc);
     });
 
     if (changed) {
       this.incidents = active;
       this.saveIncidents();
+      this.saveHistory();
     }
   }
 
   loadIncidents() {
     try {
       const raw = localStorage.getItem(this.STORAGE_KEY_INCIDENTS);
-      return raw ? JSON.parse(raw) : [];
+      let list = raw ? JSON.parse(raw) : [];
+      const dismissed = this.getDismissedIds();
+      // Filter out any dismissed, resolved, or false alarm incidents
+      list = list.filter(i => !dismissed.includes(i.id) && i.status !== INCIDENT_STATES.RESOLVED && i.status !== INCIDENT_STATES.FALSE_ALARM);
+      return list;
     } catch (e) {
       return [];
     }

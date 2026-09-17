@@ -1,0 +1,112 @@
+{
+  "$schema": "https://antigravity.google/schemas/subagent-definition.v1.json",
+  "schema_version": "1.0.0",
+  "metadata": {
+    "framework": "Antigravity Multi-Agent Reasoning Framework",
+    "description": "Declarative subagent archetype catalog with role-based tool capability scoping.",
+    "last_updated": "2026-08-24"
+  },
+  "subagents": {
+    "planner": {
+      "role": "Planner / Architect",
+      "description": "Decomposes complex problems into atomic dependency graphs (DAG), defines system invariants, and constructs milestone roadmaps.",
+      "capabilities": {
+        "enable_write_tools": false,
+        "enable_subagent_tools": true,
+        "enable_mcp_tools": false,
+        "allowed_tools": [
+          "view_file",
+          "grep_search",
+          "find_by_name",
+          "list_dir",
+          "send_message",
+          "schedule",
+          "manage_task",
+          "invoke_subagent"
+        ]
+      },
+      "workspace_policy": {
+        "read_scope": "workspace_root",
+        "write_scope": ".agents/planner_*"
+      },
+      "system_prompt_ref": "prompts/planner.md",
+      "default_timeout_seconds": 600,
+      "max_turns": 20
+    },
+    "researcher": {
+      "role": "Researcher / Explorer",
+      "description": "Performs deep codebase exploration, symbol tracing, documentation analysis, and web search to establish empirical evidence chains.",
+      "capabilities": {
+        "enable_write_tools": false,
+        "enable_subagent_tools": false,
+        "enable_mcp_tools": true,
+        "allowed_tools": [
+          "view_file",
+          "grep_search",
+          "find_by_name",
+          "list_dir",
+          "search_web",
+          "read_url_content",
+          "send_message"
+        ]
+      },
+      "workspace_policy": {
+        "read_scope": "workspace_root",
+        "write_scope": ".agents/researcher_*"
+      },
+      "system_prompt_ref": "prompts/researcher.md",
+      "default_timeout_seconds": 600,
+      "max_turns": 25
+    },
+    "critic": {
+      "role": "Critic / Adversarial Reviewer",
+      "description": "Performs blind adversarial inspection, stress-tests assumptions, identifies edge cases, and audits security/correctness invariants.",
+      "capabilities": {
+        "enable_write_tools": false,
+        "enable_subagent_tools": false,
+        "enable_mcp_tools": false,
+        "allowed_tools": [
+          "view_file",
+          "grep_search",
+          "find_by_name",
+          "list_dir",
+          "send_message"
+        ]
+      },
+      "workspace_policy": {
+        "read_scope": "workspace_root",
+        "write_scope": ".agents/critic_*"
+      },
+      "system_prompt_ref": "prompts/critic.md",
+      "default_timeout_seconds": 450,
+      "max_turns": 15
+    },
+    "synthesizer": {
+      "role": "Synthesizer / Implementer",
+      "description": "Translates plans, research findings, and critique resolutions into clean code patches, running builds and tests for empirical verification.",
+      "capabilities": {
+        "enable_write_tools": true,
+        "enable_subagent_tools": false,
+        "enable_mcp_tools": false,
+        "allowed_tools": [
+          "view_file",
+          "grep_search",
+          "find_by_name",
+          "list_dir",
+          "write_to_file",
+          "replace_file_content",
+          "run_command",
+          "send_message",
+          "manage_task"
+        ]
+      },
+      "workspace_policy": {
+        "read_scope": "workspace_root",
+        "write_scope": "workspace_root"
+      },
+      "system_prompt_ref": "prompts/synthesizer.md",
+      "default_timeout_seconds": 900,
+      "max_turns": 30
+    }
+  }
+}

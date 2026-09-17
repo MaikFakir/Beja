@@ -63,45 +63,209 @@
     }
 
     async loginWithGoogle() {
-      if (this.isConfigured && this.auth) {
-        try {
-          const provider = new window.firebase.auth.GoogleAuthProvider();
-          const result = await this.auth.signInWithPopup(provider);
-          return result.user;
-        } catch (err) {
-          console.warn('Google Popup issue, usando acceso asistido:', err);
-          return this.promptLocalDemoLogin();
+      return this.openGoogleChooser();
+    }
+
+    openGoogleChooser() {
+      return new Promise((resolve) => {
+        let modal = document.getElementById('google-account-chooser-modal');
+        if (!modal) {
+          this.injectGoogleChooserDOM();
+          modal = document.getElementById('google-account-chooser-modal');
         }
-      } else {
-        return this.promptLocalDemoLogin();
-      }
+
+        if (modal) {
+          modal.classList.remove('hidden');
+
+          const cleanup = () => {
+            modal.classList.add('hidden');
+          };
+
+          // Account items click
+          const items = modal.querySelectorAll('.google-account-item');
+          items.forEach(item => {
+            item.onclick = () => {
+              const email = item.dataset.email;
+              const user = this.loginWithEmail(email);
+              cleanup();
+              resolve(user);
+            };
+          });
+
+          // Custom account drawer
+          const btnToggle = modal.querySelector('#btn-toggle-custom-google');
+          const drawer = modal.querySelector('#custom-google-email-drawer');
+          const input = modal.querySelector('#custom-google-email-input');
+          const btnConfirm = modal.querySelector('#btn-confirm-custom-google');
+
+          if (btnToggle && drawer) {
+            btnToggle.onclick = (e) => {
+              e.preventDefault();
+              drawer.classList.toggle('hidden');
+              if (!drawer.classList.contains('hidden') && input) input.focus();
+            };
+          }
+
+          if (btnConfirm && input) {
+            btnConfirm.onclick = (e) => {
+              e.preventDefault();
+              const email = input.value.trim();
+              if (email && email.includes('@')) {
+                const user = this.loginWithEmail(email);
+                cleanup();
+                resolve(user);
+              } else {
+                alert('Por favor ingresa un correo electrónico válido.');
+              }
+            };
+            input.onkeydown = (e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                btnConfirm.click();
+              }
+            };
+          }
+
+          // Close button
+          const btnClose = modal.querySelector('#btn-close-google-chooser');
+          if (btnClose) {
+            btnClose.onclick = (e) => {
+              e.preventDefault();
+              cleanup();
+              resolve(null);
+            };
+          }
+
+          // Backdrop click
+          modal.onclick = (e) => {
+            if (e.target === modal) {
+              cleanup();
+              resolve(null);
+            }
+          };
+        } else {
+          resolve(this.promptLocalDemoLogin());
+        }
+      });
+    }
+
+    injectGoogleChooserDOM() {
+      if (document.getElementById('google-account-chooser-modal')) return;
+      const chooserHtml = `
+        <div class="google-chooser-backdrop" id="google-account-chooser-modal" role="dialog" aria-modal="true">
+          <div class="google-chooser-sheet">
+            <div class="google-chooser-header">
+              <div class="google-brand-header">
+                <svg class="google-svg-header" viewBox="0 0 24 24" width="28" height="28">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+                <div>
+                  <h3 style="margin:0;font-size:1.15rem;color:#fff;font-weight:700;">Acceder con Google</h3>
+                  <p style="margin:2px 0 0;font-size:0.8rem;color:#94a3b8;">Elige una cuenta para continuar en Colmena Segura</p>
+                </div>
+              </div>
+              <button class="btn-close-google-chooser" id="btn-close-google-chooser" aria-label="Cerrar">&times;</button>
+            </div>
+
+            <div class="google-accounts-list">
+              <button class="google-account-item" data-email="Gabyolarte2017@gmail.com">
+                <img src="https://api.dicebear.com/7.x/bottts/svg?seed=gabyolarte2017@gmail.com" class="google-account-avatar" alt="Avatar">
+                <div class="google-account-info">
+                  <span class="account-name">Gaby Olarte <span class="badge-role-pill admin-pill">👑 Super Admin</span></span>
+                  <span class="account-email">Gabyolarte2017@gmail.com</span>
+                </div>
+                <span class="account-arrow">➔</span>
+              </button>
+
+              <button class="google-account-item" data-email="patrullero.cuadrante07@gmail.com">
+                <img src="https://api.dicebear.com/7.x/bottts/svg?seed=patrullero.cuadrante07@gmail.com" class="google-account-avatar" alt="Avatar">
+                <div class="google-account-info">
+                  <span class="account-name">Patrullero Cuadrante 07 <span class="badge-role-pill patrol-pill">🚓 Patrullero</span></span>
+                  <span class="account-email">patrullero.cuadrante07@gmail.com</span>
+                </div>
+                <span class="account-arrow">➔</span>
+              </button>
+
+              <button class="google-account-item" data-email="vecino.colmena@gmail.com">
+                <img src="https://api.dicebear.com/7.x/bottts/svg?seed=vecino.colmena@gmail.com" class="google-account-avatar" alt="Avatar">
+                <div class="google-account-info">
+                  <span class="account-name">Vecino Ciudadano <span class="badge-role-pill citizen-pill">👤 Ciudadano</span></span>
+                  <span class="account-email">vecino.colmena@gmail.com</span>
+                </div>
+                <span class="account-arrow">➔</span>
+              </button>
+
+              <div class="custom-google-account-section">
+                <button class="btn-toggle-custom-google" id="btn-toggle-custom-google">
+                  <span>➕ Usar otra cuenta de Google</span>
+                </button>
+                <div class="custom-email-drawer hidden" id="custom-google-email-drawer">
+                  <input type="email" id="custom-google-email-input" placeholder="tu_correo@gmail.com" class="google-custom-input">
+                  <button class="btn-confirm-custom-google" id="btn-confirm-custom-google">Acceder ➔</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="google-chooser-footer">
+              <span>Para continuar, Google compartirá tu nombre, correo y foto de perfil con Colmena Segura.</span>
+            </div>
+          </div>
+        </div>
+      `;
+      const div = document.createElement('div');
+      div.innerHTML = chooserHtml.trim();
+      document.body.appendChild(div.firstElementChild);
     }
 
     promptLocalDemoLogin() {
-      const email = prompt('🔐 Iniciar Sesión con Google:\nIngresa tu correo de Gmail para identificarte en la Colmena:', 'vecino.colmena@gmail.com');
-      if (!email || !email.includes('@')) {
-        return null;
-      }
-      return this.loginWithEmail(email);
+      return this.openGoogleChooser();
     }
+
+    SUPER_ADMIN_EMAIL: 'gabyolarte2017@gmail.com',
 
     loginWithEmail(email) {
       if (!email || !email.includes('@')) return null;
       const cleanEmail = email.trim().toLowerCase();
-      const name = cleanEmail.split('@')[0].replace(/[\._-]/g, ' ').toUpperCase();
+      const isSuperAdmin = cleanEmail === this.SUPER_ADMIN_EMAIL;
+
+      // Check existing user record in directory
+      const directory = this.getUsersList();
+      const existing = directory.find(u => u.email && u.email.toLowerCase() === cleanEmail);
+
+      let role = 'citizen';
+      if (isSuperAdmin) {
+        role = 'admin';
+      } else if (existing && existing.role) {
+        role = existing.role;
+      }
+
+      const name = isSuperAdmin ? 'GABY OLARTE (SUPER ADMIN)' : (cleanEmail.split('@')[0].replace(/[\._-]/g, ' ').toUpperCase());
       const userObj = {
-        uid: 'usr_' + btoa(cleanEmail).replace(/=/g, '').slice(0, 10),
+        uid: existing ? existing.uid : ('usr_' + btoa(cleanEmail).replace(/=/g, '').slice(0, 10)),
         email: cleanEmail,
-        displayName: name,
-        photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanEmail}`,
-        role: cleanEmail.includes('admin') || cleanEmail.includes('despacho') ? 'admin' : 'citizen',
-        trustScore: 100,
-        verifiedReports: 0,
-        validationsGiven: 0,
-        status: 'active',
-        createdAt: Date.now(),
+        displayName: existing ? existing.displayName : name,
+        photoURL: existing && existing.photoURL ? existing.photoURL : `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanEmail}`,
+        role: role,
+        trustScore: existing ? (existing.trustScore || 100) : 100,
+        verifiedReports: existing ? (existing.verifiedReports || 0) : 0,
+        validationsGiven: existing ? (existing.validationsGiven || 0) : 0,
+        status: existing ? (existing.status || 'active') : 'active',
+        suspendedUntil: existing ? (existing.suspendedUntil || null) : null,
+        suspendReason: existing ? (existing.suspendReason || null) : null,
+        createdAt: existing ? (existing.createdAt || Date.now()) : Date.now(),
         lastLoginAt: Date.now()
       };
+
+      // Check if user suspension expired
+      if (userObj.status === 'suspended' && userObj.suspendedUntil && userObj.suspendedUntil <= Date.now()) {
+        userObj.status = 'active';
+        userObj.suspendedUntil = null;
+        userObj.suspendReason = null;
+      }
+
       this.setCurrentUser(userObj);
       return userObj;
     }
@@ -144,39 +308,82 @@
 
     saveToUsersDirectory(user) {
       let users = this.getUsersList();
-      const idx = users.findIndex(u => u.email === user.email || u.uid === user.uid);
+      const idx = users.findIndex(u => (u.email && u.email.toLowerCase() === user.email.toLowerCase()) || u.uid === user.uid);
       if (idx >= 0) {
         users[idx] = { ...users[idx], ...user, lastLoginAt: Date.now() };
       } else {
         users.push({ ...user, createdAt: Date.now(), lastLoginAt: Date.now() });
       }
-      try {
-        localStorage.setItem(this.STORAGE_KEY_ALL_USERS, JSON.stringify(users));
-      } catch (e) {}
+      this.saveUsersList(users);
 
       if (window.firebaseSync && window.firebaseSync.db) {
         window.firebaseSync.db.collection('users').doc(user.uid).set(user, { merge: true }).catch(() => {});
       }
     }
 
+    saveUsersList(users) {
+      try {
+        localStorage.setItem(this.STORAGE_KEY_ALL_USERS, JSON.stringify(users));
+      } catch (e) {}
+      if (window.syncBus) {
+        window.syncBus.emit('USER_DIRECTORY_UPDATED', { users });
+      }
+    }
+
     getUsersList() {
       try {
         const raw = localStorage.getItem(this.STORAGE_KEY_ALL_USERS);
-        if (raw) return JSON.parse(raw);
+        if (raw) {
+          const list = JSON.parse(raw);
+          // Ensure Super Admin Gabyolarte2017@gmail.com is always present and retains admin role
+          const superAdminIdx = list.findIndex(u => u.email && u.email.toLowerCase() === this.SUPER_ADMIN_EMAIL);
+          if (superAdminIdx >= 0) {
+            list[superAdminIdx].role = 'admin';
+          } else {
+            list.unshift({
+              uid: 'user_admin_super',
+              email: 'Gabyolarte2017@gmail.com',
+              displayName: 'GABY OLARTE (SUPER ADMIN)',
+              photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=Gaby',
+              role: 'admin',
+              trustScore: 100,
+              verifiedReports: 35,
+              validationsGiven: 70,
+              status: 'active',
+              suspendedUntil: null,
+              createdAt: Date.now() - 86400000 * 30
+            });
+          }
+          return list;
+        }
       } catch (e) {}
 
       const initialDirectory = [
         {
-          uid: 'user_admin_01',
-          email: 'central.despacho@colmena.org',
-          displayName: 'CENTRAL COMANDO METROPOLITANO',
-          photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=admin',
+          uid: 'user_admin_super',
+          email: 'Gabyolarte2017@gmail.com',
+          displayName: 'GABY OLARTE (SUPER ADMIN)',
+          photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=Gaby',
           role: 'admin',
           trustScore: 100,
-          verifiedReports: 24,
-          validationsGiven: 48,
+          verifiedReports: 35,
+          validationsGiven: 70,
           status: 'active',
+          suspendedUntil: null,
           createdAt: Date.now() - 86400000 * 30
+        },
+        {
+          uid: 'user_patrol_01',
+          email: 'patrulla.cuadrante04@policia.gov.co',
+          displayName: 'PATRULLA CUADRANTE 04 (AGENTE MORALES)',
+          photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=patrol',
+          role: 'patrol',
+          trustScore: 100,
+          verifiedReports: 42,
+          validationsGiven: 84,
+          status: 'active',
+          suspendedUntil: null,
+          createdAt: Date.now() - 86400000 * 20
         },
         {
           uid: 'user_cit_02',
@@ -188,6 +395,7 @@
           verifiedReports: 7,
           validationsGiven: 19,
           status: 'active',
+          suspendedUntil: null,
           createdAt: Date.now() - 86400000 * 12
         },
         {
@@ -200,6 +408,7 @@
           verifiedReports: 2,
           validationsGiven: 8,
           status: 'active',
+          suspendedUntil: null,
           createdAt: Date.now() - 86400000 * 5
         }
       ];
@@ -207,6 +416,86 @@
         localStorage.setItem(this.STORAGE_KEY_ALL_USERS, JSON.stringify(initialDirectory));
       } catch (e) {}
       return initialDirectory;
+    }
+
+    updateUserRole(uid, newRole) {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      if (user.email && user.email.toLowerCase() === this.SUPER_ADMIN_EMAIL && newRole !== 'admin') {
+        return false; // Cannot demote superadmin
+      }
+      user.role = newRole;
+      this.saveUsersList(users);
+      if (this.currentUser && this.currentUser.uid === uid) {
+        this.currentUser.role = newRole;
+        localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser));
+      }
+      return true;
+    }
+
+    suspendUser(uid, durationMs, reason = 'Suspensión temporal por moderación') {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      if (user.email && user.email.toLowerCase() === this.SUPER_ADMIN_EMAIL) {
+        return false; // Cannot suspend superadmin
+      }
+      user.status = 'suspended';
+      user.suspendedUntil = durationMs === Infinity ? Infinity : (Date.now() + durationMs);
+      user.suspendReason = reason;
+      this.saveUsersList(users);
+      if (this.currentUser && this.currentUser.uid === uid) {
+        this.currentUser.status = 'suspended';
+        this.currentUser.suspendedUntil = user.suspendedUntil;
+        localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser));
+      }
+      return true;
+    }
+
+    reactivateUser(uid) {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      user.status = 'active';
+      user.suspendedUntil = null;
+      user.suspendReason = null;
+      this.saveUsersList(users);
+      if (this.currentUser && this.currentUser.uid === uid) {
+        this.currentUser.status = 'active';
+        this.currentUser.suspendedUntil = null;
+        localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser));
+      }
+      return true;
+    }
+
+    disableUser(uid) {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      if (user.email && user.email.toLowerCase() === this.SUPER_ADMIN_EMAIL) {
+        return false;
+      }
+      user.status = 'disabled';
+      this.saveUsersList(users);
+      if (this.currentUser && this.currentUser.uid === uid) {
+        this.currentUser.status = 'disabled';
+        localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser));
+      }
+      return true;
+    }
+
+    adjustUserReputation(uid, delta) {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      user.trustScore = Math.max(0, Math.min(100, (user.trustScore || 75) + delta));
+      this.saveUsersList(users);
+      if (this.currentUser && this.currentUser.uid === uid) {
+        this.currentUser.trustScore = user.trustScore;
+        localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser));
+      }
+      return true;
     }
 
     onAuthStateChanged(callback) {

@@ -249,6 +249,7 @@
     PROBING: 'PROBING',
     CRITICAL_SWARM: 'CRITICAL_SWARM',
     DISPATCHED: 'DISPATCHED',
+    PATROL_ATTENDED: 'PATROL_ATTENDED',
     RESOLVED: 'RESOLVED',
     FALSE_ALARM: 'FALSE_ALARM'
   };
@@ -279,27 +280,24 @@
       });
     }
 
-    loadIncidents() {
-      try {
-        const raw = localStorage.getItem(this.STORAGE_KEY_INCIDENTS);
-        return raw ? JSON.parse(raw) : [];
-      } catch (e) { return []; }
-    }
-
-    saveIncidents() {
-      try { localStorage.setItem(this.STORAGE_KEY_INCIDENTS, JSON.stringify(this.incidents)); } catch (e) {}
-    }
-
-    loadHistory() {
-      try {
-        const raw = localStorage.getItem(this.STORAGE_KEY_HISTORY);
-        if (raw) return JSON.parse(raw);
-      } catch (e) {}
-      return [];
-    }
-
-    saveHistory() {
-      try { localStorage.setItem(this.STORAGE_KEY_HISTORY, JSON.stringify(this.history)); } catch (e) {}
+    patrolIncident(incidentId, unitData = { code: 'PATRULLA-CUADRANTE', etaMinutes: 0 }) {
+      this.incidents = this.loadIncidents();
+      const incident = this.incidents.find(i => i.id === incidentId);
+      if (!incident) return;
+      incident.status = INCIDENT_STATES.PATROL_ATTENDED;
+      incident.patrolAttendedAt = Date.now();
+      incident.attendedBy = unitData;
+      this.history.push({
+        lat: incident.lat,
+        lng: incident.lng,
+        category: incident.category,
+        weight: 0.35, // Soft calm weight: preserves hotzone without loud alarm
+        timestamp: Date.now(),
+        timeOfDay: new Date().getHours() >= 19 || new Date().getHours() <= 5 ? 'NIGHT' : 'DAY'
+      });
+      this.saveHistory();
+      this.saveIncidents();
+      syncBus.emit('INCIDENT_MUTATION', { incident, status: INCIDENT_STATES.PATROL_ATTENDED });
     }
 
     dispatchUnit(incidentId, unitData = { code: 'PATRULLA-07', etaMinutes: 3 }) {
@@ -317,6 +315,7 @@
       this.incidents = this.loadIncidents();
       const incident = this.incidents.find(i => i.id === incidentId);
       if (!incident) return;
+      this.recordDismissedId(incidentId);
       this.incidents = this.incidents.filter(i => i.id !== incidentId);
       this.saveIncidents();
       syncBus.emit('INCIDENT_MUTATION', { incidentId, status: INCIDENT_STATES.RESOLVED });
@@ -331,6 +330,7 @@
           else if (trust.score >= 70) trust.level = '🟢 Guardián Activo';
           else if (trust.score >= 45) trust.level = '🟡 Ciudadano Iniciado';
           else trust.level = '⚠️ En Observación';
+          trust.history = trust.history || [];
           trust.history.unshift({ timestamp: Date.now(), delta: '+5', reason: 'Incidente atendido y resuelto por autoridades' });
           if (trust.history.length > 10) trust.history.pop();
           localStorage.setItem('colmena_user_trust_v2', JSON.stringify(trust));
@@ -343,6 +343,7 @@
       this.incidents = this.loadIncidents();
       const incident = this.incidents.find(i => i.id === incidentId);
       if (!incident) return;
+      this.recordDismissedId(incidentId);
       this.incidents = this.incidents.filter(i => i.id !== incidentId);
       this.saveIncidents();
       syncBus.emit('INCIDENT_MUTATION', { incidentId, status: INCIDENT_STATES.FALSE_ALARM });
@@ -357,12 +358,82 @@
           else if (trust.score >= 70) trust.level = '🟢 Guardián Activo';
           else if (trust.score >= 45) trust.level = '🟡 Ciudadano Iniciado';
           else trust.level = '⚠️ En Observación';
+          trust.history = trust.history || [];
           trust.history.unshift({ timestamp: Date.now(), delta: '-15', reason: 'Penalización: Reporte descartado como falsa alarma' });
           if (trust.history.length > 10) trust.history.pop();
           localStorage.setItem('colmena_user_trust_v2', JSON.stringify(trust));
           syncBus.emit('TRUST_UPDATED', { trust, delta: -15, reason: 'Penalización por reporte falso' });
         }
       } catch (e) {}
+    }
+
+    recordDismissedId(id) {
+      try {
+        const raw = localStorage.getItem('colmena_dismissed_incident_ids_v2');
+        const set = raw ? JSON.parse(raw) : [];
+        if (!set.includes(id)) {
+          set.push(id);
+          localStorage.setItem('colmena_dismissed_incident_ids_v2', JSON.stringify(set));
+        }
+      } catch (e) {}
+    }
+
+    getDismissedIds() {
+      try {
+        const raw = localStorage.getItem('colmena_dismissed_incident_ids_v2');
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    cleanupExpiredIncidents() {
+      const now = Date.now();
+      const active = [];
+      let changed = false;
+      const dismissed = this.getDismissedIds();
+
+      this.incidents.forEach(inc => {
+        if (dismissed.includes(inc.id) || inc.status === INCIDENT_STATES.RESOLVED || inc.status === INCIDENT_STATES.FALSE_ALARM) {
+          changed = true;
+          return;
+        }
+        const ageMs = now - (inc.updatedAt || inc.createdAt);
+        // Probing dissolves after 10 minutes
+        if (inc.status === INCIDENT_STATES.PROBING && ageMs > 10 * 60 * 1000) {
+          changed = true;
+          this.recordDismissedId(inc.id);
+          return;
+        }
+        // Critical auto-archives after 30 minutes
+        if ((inc.status === INCIDENT_STATES.CRITICAL_SWARM || inc.status === INCIDENT_STATES.DISPATCHED) && ageMs > 30 * 60 * 1000) {
+          changed = true;
+          this.recordDismissedId(inc.id);
+          return;
+        }
+        // Patrol attended archives after 20 minutes
+        if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > 20 * 60 * 1000) {
+          changed = true;
+          this.recordDismissedId(inc.id);
+          return;
+        }
+        active.push(inc);
+      });
+
+      if (changed) {
+        this.incidents = active;
+        this.saveIncidents();
+      }
+    }
+
+    loadIncidents() {
+      try {
+        const raw = localStorage.getItem(this.STORAGE_KEY_INCIDENTS);
+        let list = raw ? JSON.parse(raw) : [];
+        const dismissed = this.getDismissedIds();
+        list = list.filter(i => !dismissed.includes(i.id) && i.status !== INCIDENT_STATES.RESOLVED && i.status !== INCIDENT_STATES.FALSE_ALARM);
+        return list;
+      } catch (e) { return []; }
     }
 
     sendBroadcastAlert({ title, message }) {
@@ -404,10 +475,15 @@
           attributionControl: false
         });
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        // CartoDB Dark Matter Tactical Map Tiles (Free, No API Key Required)
+        const freeTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
           maxZoom: 19,
-          subdomains: 'abcd'
-        }).addTo(this.map);
+          subdomains: 'abcd',
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+          className: 'colmena-dark-tiles',
+          errorTileUrl: 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
+        });
+        freeTileLayer.addTo(this.map);
 
         L.control.zoom({ position: 'bottomright' }).addTo(this.map);
 
@@ -486,23 +562,25 @@
 
         const isCritical = inc.status === INCIDENT_STATES.CRITICAL_SWARM;
         const isDispatched = inc.status === INCIDENT_STATES.DISPATCHED;
+        const isPatrolAttended = inc.status === INCIDENT_STATES.PATROL_ATTENDED;
         const cat = INCIDENT_CATEGORIES[inc.category] || INCIDENT_CATEGORIES.FIGHT;
 
         // 50m swarm influence radius
         L.circle([inc.lat, inc.lng], {
           radius: 50,
-          color: isCritical ? '#ff2a55' : (isDispatched ? '#00d2ff' : '#ffb800'),
+          color: isCritical ? '#ff2a55' : (isPatrolAttended ? '#00b0ff' : (isDispatched ? '#00d2ff' : '#ffb800')),
           weight: 2,
-          fillColor: isCritical ? '#ff2a55' : (isDispatched ? '#00d2ff' : '#ffb800'),
-          fillOpacity: isCritical ? 0.3 : 0.15,
+          fillColor: isCritical ? '#ff2a55' : (isPatrolAttended ? '#00b0ff' : (isDispatched ? '#00d2ff' : '#ffb800')),
+          fillOpacity: isCritical ? 0.3 : (isPatrolAttended ? 0.12 : 0.15),
           dashArray: isCritical ? null : '4, 6'
         }).addTo(this.markerLayerGroup);
 
+        // ONLY critical has pulsating wave! Probing and patrol-attended do NOT pulsate.
         const markerHtml = `
-          <div class="incident-custom-marker ${isCritical ? 'critical' : (isDispatched ? 'dispatched' : 'probing')}">
-            <div class="marker-radar-wave"></div>
+          <div class="incident-custom-marker ${isCritical ? 'critical' : (isPatrolAttended ? 'patrol-attended' : (isDispatched ? 'dispatched' : 'probing'))}">
+            ${isCritical ? '<div class="marker-radar-wave"></div>' : ''}
             <div class="marker-core">
-              <span class="marker-icon">${cat.icon}</span>
+              <span class="marker-icon">${isPatrolAttended ? '🚓' : cat.icon}</span>
               <span class="marker-count">${inc.reportCount}</span>
             </div>
           </div>
@@ -513,23 +591,26 @@
         const popupContent = `
           <div class="tactical-popup">
             <div class="popup-header">
-              <span class="popup-category">${cat.icon} ${cat.name}</span>
-              <span class="popup-badge ${isCritical ? 'badge-critical' : 'badge-warning'}">
-                ${isCritical ? '🚨 ENJAMBRE CRÍTICO' : (isDispatched ? '🚔 EN CAMINO' : '🟡 SONDEO')}
+              <span class="popup-category">${isPatrolAttended ? '🚓 Cuadrante en Sitio' : `${cat.icon} ${cat.name}`}</span>
+              <span class="popup-badge ${isCritical ? 'badge-critical' : (isPatrolAttended ? 'badge-patrol-attended' : 'badge-warning')}">
+                ${isCritical ? '🚨 ENJAMBRE CRÍTICO' : (isPatrolAttended ? '🚓 ASEGURADO POR PATRULLA' : (isDispatched ? '🚔 EN CAMINO' : '🟡 SONDEO'))}
               </span>
             </div>
             <div class="popup-body">
-              <p>👥 <strong>${inc.reportCount} ciudadano(s)</strong> coinciden en 200m.</p>
+              <p>👥 <strong>${inc.reportCount} ciudadano(s)</strong> coinciden en 50m.</p>
               <p style="color:var(--text-muted);font-size:0.72rem;">📍 Coordenadas: ${inc.lat.toFixed(4)}, ${inc.lng.toFixed(4)}</p>
               ${inc.reporters[0]?.note ? `<p style="font-style:italic;margin:4px 0;">"${inc.reporters[0].note}"</p>` : ''}
+              ${isPatrolAttended ? `<p style="color:#00b0ff;font-weight:700;font-size:0.75rem;">🚓 Patrulla en sitio. Zona calmada sin alarma ruidosa.</p>` : ''}
               ${inc.assignedUnit ? `<p style="color:var(--color-info);font-weight:700;">🚔 ${inc.assignedUnit.code} (ETA ~${inc.assignedUnit.etaMinutes}m)</p>` : ''}
             </div>
             <div style="display:flex;gap:4px;margin-top:8px;">
-              ${!isDispatched ? `
+              ${!isPatrolAttended ? `
+                <button class="btn-tactical" style="background:rgba(0,176,255,0.2);border:1px solid #00b0ff;color:#00b0ff;" onclick="window.dispatcherApp.patrolAttend('${inc.id}')">🚓 Atender (Azul)</button>
+              ` : ''}
+              ${!isDispatched && !isPatrolAttended ? `
                 <button class="btn-tactical btn-dispatch" onclick="window.dispatcherApp.dispatch('${inc.id}')">🚔 Despachar</button>
-              ` : `
-                <button class="btn-tactical btn-resolve" onclick="window.dispatcherApp.resolve('${inc.id}')">✅ Resolver</button>
-              `}
+              ` : ''}
+              <button class="btn-tactical btn-resolve" onclick="window.dispatcherApp.resolve('${inc.id}')">✅ Resolver</button>
               <button class="btn-tactical btn-dismiss" onclick="window.dispatcherApp.dismiss('${inc.id}')">❌ Falsa</button>
             </div>
           </div>
@@ -612,13 +693,57 @@
     }
 
     async sendBroadcastToCloud(broadcastData) {
-      if (!this.isConfigured || !this.db || !broadcastData) return;
-      try {
-        await this.db.collection('broadcasts').add({
-          ...broadcastData,
-          timestamp: Date.now()
-        });
-      } catch (e) {}
+      const bc = {
+        ...broadcastData,
+        active: true,
+        timestamp: Date.now()
+      };
+      if (this.isConfigured && this.db) {
+        try {
+          await this.db.collection('broadcasts').add(bc);
+        } catch (e) {}
+      }
+      let local = [];
+      try { local = JSON.parse(localStorage.getItem('colmena_local_broadcasts') || '[]'); } catch (e) {}
+      local.unshift(bc);
+      localStorage.setItem('colmena_local_broadcasts', JSON.stringify(local.slice(0, 50)));
+    }
+
+    async getBroadcastsFromCloud() {
+      if (this.isConfigured && this.db) {
+        try {
+          const snap = await this.db.collection('broadcasts').orderBy('timestamp', 'desc').limit(50).get();
+          const list = [];
+          snap.forEach(doc => list.push({ ...doc.data(), id: doc.id }));
+          if (list.length > 0) return list;
+        } catch (e) {}
+      }
+      const local = localStorage.getItem('colmena_local_broadcasts') || '[]';
+      try { return JSON.parse(local); } catch (e) { return []; }
+    }
+
+    async toggleBroadcastStatus(id, active) {
+      if (this.isConfigured && this.db) {
+        try {
+          await this.db.collection('broadcasts').doc(id).update({ active });
+        } catch (e) {}
+      }
+      let local = [];
+      try { local = JSON.parse(localStorage.getItem('colmena_local_broadcasts') || '[]'); } catch (e) {}
+      local = local.map(b => b.id === id ? { ...b, active } : b);
+      localStorage.setItem('colmena_local_broadcasts', JSON.stringify(local));
+    }
+
+    async deleteBroadcast(id) {
+      if (this.isConfigured && this.db) {
+        try {
+          await this.db.collection('broadcasts').doc(id).delete();
+        } catch (e) {}
+      }
+      let local = [];
+      try { local = JSON.parse(localStorage.getItem('colmena_local_broadcasts') || '[]'); } catch (e) {}
+      local = local.filter(b => b.id !== id);
+      localStorage.setItem('colmena_local_broadcasts', JSON.stringify(local));
     }
   }
 
@@ -716,8 +841,12 @@
     constructor() {
       this.tacticalMap = null;
       this.selectedFilter = 'ALL';
+      this.queueStatusFilter = 'ACTIVE_CRITICAL'; // Default to active/critical as requested by user!
+      this.userRoleFilter = 'ALL';
+      this.chatRoleFilter = 'ALL';
+      this.selectedUserForModeration = null;
       this.mobileView = 'map'; // 'map' or 'queue'
-      this.currentView = 'radar'; // 'radar' or 'users'
+      this.currentView = 'radar'; // 'radar', 'users', 'broadcasts', 'chat'
       this.userSearchQuery = '';
       this.init();
     }
@@ -729,12 +858,94 @@
       try { this.setupEventListeners(); } catch (e) { console.error('setupEventListeners error:', e); }
       try { this.renderMetrics(); } catch (e) { console.error('renderMetrics error:', e); }
       try { this.renderIncidentQueue(); } catch (e) { console.error('renderIncidentQueue error:', e); }
+      try { this.setupQueueStatusFilters(); } catch (e) { console.error('setupQueueStatusFilters error:', e); }
       try { this.setupBroadcastModal(); } catch (e) { console.error('setupBroadcastModal error:', e); }
       try { this.setupSimulationBar(); } catch (e) { console.error('setupSimulationBar error:', e); }
       try { this.setupCategoryFilters(); } catch (e) { console.error('setupCategoryFilters error:', e); }
       try { this.setupMobileSwitcher(); } catch (e) { console.error('setupMobileSwitcher error:', e); }
       try { this.setupViewSwitcher(); } catch (e) { console.error('setupViewSwitcher error:', e); }
       try { this.setupUserDirectoryEvents(); } catch (e) { console.error('setupUserDirectoryEvents error:', e); }
+      try { this.setupUserModerationModal(); } catch (e) { console.error('setupUserModerationModal error:', e); }
+      try { this.setupAdminChat(); } catch (e) { console.error('setupAdminChat error:', e); }
+      try { this.setupBulkGenerator(); } catch (e) { console.error('setupBulkGenerator error:', e); }
+      try { this.setupAuthorityGate(); } catch (e) { console.error('setupAuthorityGate error:', e); }
+    }
+
+    setupAuthorityGate() {
+      const gateModal = document.getElementById('admin-access-gate-modal');
+      const btnGateLogin = document.getElementById('btn-gate-login-authority');
+      const headerPill = document.getElementById('admin-user-header-pill');
+
+      const evaluateAuth = (user) => {
+        const isAuthorized = user && (user.role === 'admin' || user.role === 'patrol');
+        if (gateModal) {
+          if (isAuthorized) {
+            gateModal.classList.add('hidden');
+          } else {
+            gateModal.classList.remove('hidden');
+          }
+        }
+
+        if (headerPill) {
+          if (isAuthorized) {
+            const roleBadge = user.role === 'admin' ? '👑 Admin' : '🚓 Patrullero';
+            headerPill.innerHTML = `
+              <div class="authority-header-chip" title="Sesión de Autoridad Activa">
+                <img src="${user.photoURL}" alt="Avatar" class="auth-chip-avatar">
+                <div class="auth-chip-info">
+                  <span class="auth-chip-name">${user.displayName.split(' ')[0]}</span>
+                  <span class="auth-chip-role">${roleBadge}</span>
+                </div>
+                <button class="auth-chip-logout" id="btn-admin-logout" title="Cerrar sesión">&times;</button>
+              </div>
+            `;
+            headerPill.querySelector('#btn-admin-logout')?.addEventListener('click', async () => {
+              sounds.playClick();
+              if (window.firebaseAuth) await window.firebaseAuth.logout();
+              evaluateAuth(null);
+            });
+          } else {
+            headerPill.innerHTML = `
+              <button class="tactical-btn" id="btn-admin-header-login" style="background: rgba(239, 68, 68, 0.2); border-color: var(--color-critical); color: #ff5c77;">
+                🔑 Entrar C2
+              </button>
+            `;
+            headerPill.querySelector('#btn-admin-header-login')?.addEventListener('click', () => {
+              sounds.playClick();
+              this.promptAuthorityLogin();
+            });
+          }
+        }
+      };
+
+      btnGateLogin?.addEventListener('click', () => {
+        sounds.playClick();
+        this.promptAuthorityLogin();
+      });
+
+      if (window.firebaseAuth) {
+        window.firebaseAuth.onAuthStateChanged(user => {
+          evaluateAuth(user);
+        });
+        evaluateAuth(window.firebaseAuth.currentUser);
+      }
+    }
+
+    async promptAuthorityLogin() {
+      if (window.firebaseAuth && window.firebaseAuth.openGoogleChooser) {
+        const user = await window.firebaseAuth.openGoogleChooser();
+        if (user) {
+          if (user.role === 'admin' || user.role === 'patrol') {
+            sounds.playDispatchChime();
+            const gate = document.getElementById('admin-access-gate-modal');
+            if (gate) gate.classList.add('hidden');
+            this.setupAuthorityGate();
+          } else {
+            sounds.playWarningPing();
+            alert('⚠️ La cuenta (' + user.email + ') tiene rol de CIUDADANO y no tiene permisos para despachar unidades ni moderar en el Centro C2. Por favor selecciona una cuenta de Autoridad (Gaby Olarte o Patrullero).');
+          }
+        }
+      }
     }
 
     setupMobileSwitcher() {
@@ -835,22 +1046,45 @@
       if (statDispM) statDispM.textContent = disp;
     }
 
+    setupQueueStatusFilters() {
+      const statusButtons = document.querySelectorAll('#queue-status-filter-tabs .status-segment-btn');
+      statusButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          sounds.playClick();
+          statusButtons.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          this.queueStatusFilter = btn.dataset.statusFilter;
+          this.renderIncidentQueue();
+        });
+      });
+    }
+
     renderIncidentQueue() {
       const queue = document.getElementById('admin-incident-queue');
       if (!queue) return;
 
       const rawIncidents = swarmEngine.loadIncidents();
       const incidents = rawIncidents.filter(inc => {
-        if (this.selectedFilter === 'ALL') return true;
-        return inc.category === this.selectedFilter;
+        // 1. Category Filter
+        if (this.selectedFilter !== 'ALL' && inc.category !== this.selectedFilter) return false;
+
+        // 2. Status Segmenter Filter (User requested to isolate active from probing)
+        if (this.queueStatusFilter === 'ACTIVE_CRITICAL') {
+          return inc.status === INCIDENT_STATES.CRITICAL_SWARM || inc.status === INCIDENT_STATES.DISPATCHED;
+        } else if (this.queueStatusFilter === 'PATROL_ATTENDED') {
+          return inc.status === INCIDENT_STATES.PATROL_ATTENDED;
+        } else if (this.queueStatusFilter === 'PROBING') {
+          return inc.status === INCIDENT_STATES.PROBING;
+        }
+        return true;
       });
 
       if (incidents.length === 0) {
         queue.innerHTML = `
           <div class="admin-empty-queue">
             <span style="font-size: 2.2rem;">🛡️</span>
-            <p>Sin incidentes activos para el filtro seleccionado.</p>
-            <small>La colmena de seguridad está monitoreando en vivo en tu ciudad.</small>
+            <p>Sin incidentes activos para el filtro actual.</p>
+            <small>Los eventos de otras prioridades están en sus respectivas pestañas superiores.</small>
           </div>
         `;
         return;
@@ -859,15 +1093,34 @@
       queue.innerHTML = incidents.map(inc => {
         const isCritical = inc.status === INCIDENT_STATES.CRITICAL_SWARM;
         const isDispatched = inc.status === INCIDENT_STATES.DISPATCHED;
+        const isPatrolAttended = inc.status === INCIDENT_STATES.PATROL_ATTENDED;
         const cat = INCIDENT_CATEGORIES[inc.category] || INCIDENT_CATEGORIES.FIGHT;
         const timeElapsedMins = Math.max(1, Math.round((Date.now() - inc.createdAt) / 60000));
 
+        let cardClass = 'admin-card-probing';
+        let statusBadgeClass = 'status-warning';
+        let statusLabel = '🟡 SONDEO PREVENTIVO';
+
+        if (isCritical) {
+          cardClass = 'admin-card-critical';
+          statusBadgeClass = 'status-critical';
+          statusLabel = '🔴 ENJAMBRE CRÍTICO';
+        } else if (isPatrolAttended) {
+          cardClass = 'admin-card-patrol-attended';
+          statusBadgeClass = 'status-patrol-attended';
+          statusLabel = '🚓 ASEGURADO POR PATRULLA';
+        } else if (isDispatched) {
+          cardClass = 'admin-card-dispatched';
+          statusBadgeClass = 'status-info';
+          statusLabel = '🔵 DESPACHADO';
+        }
+
         return `
-          <div class="admin-incident-card ${isCritical ? 'admin-card-critical' : (isDispatched ? 'admin-card-dispatched' : 'admin-card-probing')}">
+          <div class="admin-incident-card ${cardClass}">
             <div class="card-header-tactical">
               <div class="header-left">
-                <span class="badge-status-tactical ${isCritical ? 'status-critical' : (isDispatched ? 'status-info' : 'status-warning')}">
-                  ${isCritical ? '🔴 ENJAMBRE CRÍTICO' : (isDispatched ? '🔵 DESPACHADO' : '🟡 SONDEO PREVENTIVO')}
+                <span class="badge-status-tactical ${statusBadgeClass}">
+                  ${statusLabel}
                 </span>
                 <span class="incident-code">#${inc.id.slice(-5).toUpperCase()}</span>
               </div>
@@ -876,27 +1129,44 @@
 
             <div class="card-body-tactical">
               <div class="category-row">
-                <span>${cat.icon}</span>
+                <span>${isPatrolAttended ? '🚓' : cat.icon}</span>
                 <strong>${cat.name}</strong>
-                <span class="swarm-tally">👥 ${inc.reportCount} en 200m</span>
+                <span class="swarm-tally">👥 ${inc.reportCount} ciudadano(s)</span>
               </div>
-              <p style="color:var(--text-dim);font-size:0.7rem;margin-top:2px;">📍 Zona: ${inc.lat.toFixed(4)}, ${inc.lng.toFixed(4)}</p>
+              <p style="color:var(--text-dim);font-size:0.7rem;margin-top:2px;">📍 Coordenadas: ${inc.lat.toFixed(4)}, ${inc.lng.toFixed(4)}</p>
               ${inc.reporters[0]?.note ? `<div class="reporter-notes">"${inc.reporters[0].note}"</div>` : ''}
+              ${isPatrolAttended ? `<div style="color:#00b0ff;font-weight:700;font-size:0.75rem;margin-top:4px;">🚓 Patrulla en sitio. Zona calmada sin alarma ruidosa.</div>` : ''}
               ${inc.assignedUnit ? `<div class="dispatched-unit-info">🚔 ${inc.assignedUnit.code} (ETA ~${inc.assignedUnit.etaMinutes}m)</div>` : ''}
             </div>
 
             <div class="card-actions-tactical">
-              ${!isDispatched ? `
+              ${!isPatrolAttended ? `
+                <button class="btn-tactical" style="background:rgba(0,176,255,0.2);border:1px solid #00b0ff;color:#00b0ff;" onclick="window.dispatcherApp.patrolAttend('${inc.id}')" title="Marcar presencia de patrulla en sitio (Alerta Azul)">
+                  🚓 Atender (Azul)
+                </button>
+              ` : ''}
+              ${!isDispatched && !isPatrolAttended ? `
                 <button class="btn-tactical btn-dispatch" onclick="window.dispatcherApp.dispatch('${inc.id}')">🚔 Despachar</button>
-              ` : `
-                <button class="btn-tactical btn-resolve" onclick="window.dispatcherApp.resolve('${inc.id}')">✅ Resuelto</button>
-              `}
+              ` : ''}
+              <button class="btn-tactical btn-resolve" onclick="window.dispatcherApp.resolve('${inc.id}')">✅ Resuelto</button>
               <button class="btn-tactical btn-locate" onclick="window.dispatcherApp.locate('${inc.id}')">📍 Ver Mapa</button>
               <button class="btn-tactical btn-dismiss" onclick="window.dispatcherApp.dismiss('${inc.id}')">❌ Falsa</button>
             </div>
           </div>
         `;
       }).join('');
+    }
+
+    patrolAttend(id) {
+      sounds.playDispatchChime();
+      swarmEngine.patrolIncident(id, {
+        code: 'PATRULLA-PRESENCIAL-' + Math.floor(Math.random() * 50 + 10),
+        attendedAt: Date.now()
+      });
+      const updated = swarmEngine.loadIncidents().find(i => i.id === id);
+      if (updated) firebaseSync.saveIncidentToCloud(updated);
+      this.renderIncidentQueue();
+      if (this.tacticalMap) this.tacticalMap.renderActiveIncidents();
     }
 
     dispatch(id) {
@@ -907,20 +1177,34 @@
       });
       const updated = swarmEngine.loadIncidents().find(i => i.id === id);
       if (updated) firebaseSync.saveIncidentToCloud(updated);
+      this.renderIncidentQueue();
+      if (this.tacticalMap) this.tacticalMap.renderActiveIncidents();
     }
 
     resolve(id) {
       sounds.playClick();
       const inc = swarmEngine.loadIncidents().find(i => i.id === id);
       swarmEngine.resolveIncident(id);
-      if (inc) firebaseSync.saveIncidentToCloud({ ...inc, status: 'RESOLVED' });
+      if (firebaseSync.deleteIncidentFromCloud) {
+        firebaseSync.deleteIncidentFromCloud(id);
+      } else if (inc) {
+        firebaseSync.saveIncidentToCloud({ ...inc, status: 'RESOLVED' });
+      }
+      this.renderIncidentQueue();
+      if (this.tacticalMap) this.tacticalMap.renderActiveIncidents();
     }
 
     dismiss(id) {
       sounds.playClick();
       const inc = swarmEngine.loadIncidents().find(i => i.id === id);
       swarmEngine.markFalseAlarm(id);
-      if (inc) firebaseSync.saveIncidentToCloud({ ...inc, status: 'FALSE_ALARM' });
+      if (firebaseSync.deleteIncidentFromCloud) {
+        firebaseSync.deleteIncidentFromCloud(id);
+      } else if (inc) {
+        firebaseSync.saveIncidentToCloud({ ...inc, status: 'FALSE_ALARM' });
+      }
+      this.renderIncidentQueue();
+      if (this.tacticalMap) this.tacticalMap.renderActiveIncidents();
     }
 
     locate(id) {
@@ -984,20 +1268,28 @@
     setupViewSwitcher() {
       const btnViewRadar = document.getElementById('btn-view-radar');
       const btnViewUsers = document.getElementById('btn-view-users');
+      const btnViewBroadcasts = document.getElementById('btn-view-broadcasts');
+      const btnViewChat = document.getElementById('btn-view-chat');
       const queuePanel = document.getElementById('admin-queue-panel');
       const mapPanel = document.getElementById('admin-map-panel');
       const categoryNav = document.getElementById('admin-category-nav');
       const usersPanel = document.getElementById('admin-users-panel');
+      const broadcastsPanel = document.getElementById('admin-broadcasts-panel');
+      const chatPanel = document.getElementById('admin-chat-panel');
 
       btnViewRadar?.addEventListener('click', () => {
         sounds.playClick();
         this.currentView = 'radar';
         btnViewRadar.classList.add('active');
         btnViewUsers?.classList.remove('active');
+        btnViewBroadcasts?.classList.remove('active');
+        btnViewChat?.classList.remove('active');
         queuePanel?.classList.remove('hidden');
         mapPanel?.classList.remove('hidden');
         categoryNav?.classList.remove('hidden');
         usersPanel?.classList.add('hidden');
+        broadcastsPanel?.classList.add('hidden');
+        chatPanel?.classList.add('hidden');
         if (this.tacticalMap && this.tacticalMap.map) {
           setTimeout(() => this.tacticalMap.map.invalidateSize(), 150);
         }
@@ -1008,11 +1300,48 @@
         this.currentView = 'users';
         btnViewUsers.classList.add('active');
         btnViewRadar?.classList.remove('active');
+        btnViewBroadcasts?.classList.remove('active');
+        btnViewChat?.classList.remove('active');
         queuePanel?.classList.add('hidden');
         mapPanel?.classList.add('hidden');
         categoryNav?.classList.add('hidden');
         usersPanel?.classList.remove('hidden');
+        broadcastsPanel?.classList.add('hidden');
+        chatPanel?.classList.add('hidden');
         this.renderUsersDirectory();
+      });
+
+      btnViewBroadcasts?.addEventListener('click', () => {
+        sounds.playClick();
+        this.currentView = 'broadcasts';
+        btnViewBroadcasts.classList.add('active');
+        btnViewRadar?.classList.remove('active');
+        btnViewUsers?.classList.remove('active');
+        btnViewChat?.classList.remove('active');
+        queuePanel?.classList.add('hidden');
+        mapPanel?.classList.add('hidden');
+        categoryNav?.classList.add('hidden');
+        usersPanel?.classList.add('hidden');
+        broadcastsPanel?.classList.remove('hidden');
+        chatPanel?.classList.add('hidden');
+        this.renderBroadcastsList();
+      });
+
+      btnViewChat?.addEventListener('click', () => {
+        sounds.playClick();
+        this.currentView = 'chat';
+        btnViewChat.classList.add('active');
+        btnViewRadar?.classList.remove('active');
+        btnViewUsers?.classList.remove('active');
+        btnViewBroadcasts?.classList.remove('active');
+        queuePanel?.classList.add('hidden');
+        mapPanel?.classList.add('hidden');
+        categoryNav?.classList.add('hidden');
+        usersPanel?.classList.add('hidden');
+        broadcastsPanel?.classList.add('hidden');
+        chatPanel?.classList.remove('hidden');
+        this.renderAdminChat();
+        this.renderAdminChatContacts();
       });
     }
 
@@ -1022,6 +1351,17 @@
         this.userSearchQuery = e.target.value.trim().toLowerCase();
         this.renderUsersDirectory();
       });
+
+      const roleTabs = document.querySelectorAll('.users-role-filters-bar .role-filter-tab');
+      roleTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          sounds.playClick();
+          roleTabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          this.userRoleFilter = tab.dataset.userRole;
+          this.renderUsersDirectory();
+        });
+      });
     }
 
     renderUsersDirectory() {
@@ -1029,7 +1369,22 @@
       if (!grid) return;
 
       const allUsers = firebaseAuth.getUsersList();
+
+      // Update count indicators
+      const countAll = document.getElementById('user-count-all');
+      const countCit = document.getElementById('user-count-citizen');
+      const countPat = document.getElementById('user-count-patrol');
+      const countAdm = document.getElementById('user-count-admin');
+      if (countAll) countAll.textContent = allUsers.length;
+      if (countCit) countCit.textContent = allUsers.filter(u => (u.role || 'citizen') === 'citizen').length;
+      if (countPat) countPat.textContent = allUsers.filter(u => u.role === 'patrol').length;
+      if (countAdm) countAdm.textContent = allUsers.filter(u => u.role === 'admin').length;
+
       const filtered = allUsers.filter(u => {
+        // Role filter
+        if (this.userRoleFilter !== 'ALL' && (u.role || 'citizen') !== this.userRoleFilter) return false;
+
+        // Search query
         if (!this.userSearchQuery) return true;
         const emailMatch = u.email && u.email.toLowerCase().includes(this.userSearchQuery);
         const nameMatch = u.displayName && u.displayName.toLowerCase().includes(this.userSearchQuery);
@@ -1037,14 +1392,36 @@
       });
 
       if (filtered.length === 0) {
-        grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: var(--text-muted);">Sin usuarios encontrados con esa búsqueda.</div>';
+        grid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: var(--text-muted);">Sin usuarios encontrados para el filtro y búsqueda actual.</div>';
         return;
       }
 
       grid.innerHTML = filtered.map(u => {
         const isAdmin = u.role === 'admin';
+        const isPatrol = u.role === 'patrol';
         const isSuspended = u.status === 'suspended';
+        const isDisabled = u.status === 'disabled';
         const trustVal = u.trustScore || 75;
+
+        let roleLabel = '👤 Ciudadano';
+        let roleBadgeClass = 'role-citizen';
+        if (isAdmin) {
+          roleLabel = '🛡️ Administrador';
+          roleBadgeClass = 'role-admin';
+        } else if (isPatrol) {
+          roleLabel = '🚓 Patrullero';
+          roleBadgeClass = 'role-patrol';
+        }
+
+        let statusLabel = '🟢 Activo';
+        let statusBadgeClass = 'status-active-user';
+        if (isSuspended) {
+          statusLabel = '🔴 Suspendido';
+          statusBadgeClass = 'status-suspended-user';
+        } else if (isDisabled) {
+          statusLabel = '⛔ Inhabilitado';
+          statusBadgeClass = 'status-disabled-user';
+        }
 
         return `
           <div class="admin-user-card" id="user-card-${u.uid}">
@@ -1054,11 +1431,11 @@
                 <h4>${u.displayName || 'Ciudadano'}</h4>
                 <p>📧 ${u.email}</p>
                 <div class="user-badge-row" style="margin-top: 4px;">
-                  <span class="badge-role ${isAdmin ? 'role-admin' : 'role-citizen'}">
-                    ${isAdmin ? '🛡️ Despachador / Admin' : '👤 Ciudadano'}
+                  <span class="badge-role ${roleBadgeClass}">
+                    ${roleLabel}
                   </span>
-                  <span class="badge-status ${isSuspended ? 'status-suspended-user' : 'status-active-user'}">
-                    ${isSuspended ? '🔴 Suspendido' : '🟢 Activo'}
+                  <span class="badge-status ${statusBadgeClass}">
+                    ${statusLabel}
                   </span>
                 </div>
               </div>
@@ -1078,14 +1455,8 @@
             </div>
 
             <div class="user-card-actions">
-              <button class="btn-user-action" onclick="window.dispatcherApp.toggleUserRole('${u.uid}')" title="Alternar entre Ciudadano y Administrador">
-                🔄 ${isAdmin ? 'Hacer Ciudadano' : 'Hacer Admin'}
-              </button>
-              <button class="btn-user-action btn-user-suspend" onclick="window.dispatcherApp.toggleUserStatus('${u.uid}')" title="Suspender o Reactivar cuenta">
-                ${isSuspended ? '✅ Reactivar' : '⚠️ Suspender'}
-              </button>
-              <button class="btn-user-action" onclick="window.dispatcherApp.resetUserReputation('${u.uid}')" title="Restablecer nivel de confianza">
-                ⭐ Restablecer
+              <button class="btn-user-action" onclick="window.dispatcherApp.openUserModeration('${u.uid}')" style="background:var(--color-accent);color:#fff;font-weight:700;">
+                ⚙️ Moderar Cuenta
               </button>
             </div>
           </div>
@@ -1093,46 +1464,487 @@
       }).join('');
     }
 
-    toggleUserRole(uid) {
-      sounds.playClick();
-      const users = firebaseAuth.getUsersList();
-      const user = users.find(u => u.uid === uid);
-      if (user) {
-        user.role = user.role === 'admin' ? 'citizen' : 'admin';
-        firebaseAuth.saveUsersList(users);
-        if (window.firebaseSync && window.firebaseSync.db) {
-          window.firebaseSync.db.collection('users').doc(uid).set(user, { merge: true }).catch(() => {});
-        }
-        this.renderUsersDirectory();
+    setupUserModerationModal() {
+      const modal = document.getElementById('admin-user-action-modal');
+      const closeBtn = document.getElementById('btn-close-user-modal');
+      closeBtn?.addEventListener('click', () => {
+        sounds.playClick();
+        if (modal) modal.classList.add('hidden');
+      });
+      if (modal) {
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) modal.classList.add('hidden');
+        });
       }
     }
 
-    toggleUserStatus(uid) {
+    openUserModeration(uid) {
       sounds.playClick();
       const users = firebaseAuth.getUsersList();
       const user = users.find(u => u.uid === uid);
-      if (user) {
-        user.status = user.status === 'suspended' ? 'active' : 'suspended';
-        firebaseAuth.saveUsersList(users);
-        if (window.firebaseSync && window.firebaseSync.db) {
-          window.firebaseSync.db.collection('users').doc(uid).set(user, { merge: true }).catch(() => {});
+      if (!user) return;
+      this.selectedUserForModeration = user;
+
+      const modal = document.getElementById('admin-user-action-modal');
+      const body = document.getElementById('user-modal-body');
+      if (!modal || !body) return;
+
+      const isSuperAdmin = user.email && user.email.toLowerCase() === 'gabyolarte2017@gmail.com';
+      const isSuspended = user.status === 'suspended';
+      const isDisabled = user.status === 'disabled';
+      const suspendedUntilStr = user.suspendedUntil 
+        ? (user.suspendedUntil === Infinity ? 'Indefinido / Permanente' : new Date(user.suspendedUntil).toLocaleString()) 
+        : 'No';
+
+      body.innerHTML = `
+        <div class="user-moderation-grid">
+          <div class="user-mod-header">
+            <img src="${user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`}" class="user-mod-avatar">
+            <div class="user-mod-meta">
+              <h4>${user.displayName}</h4>
+              <p>📧 ${user.email}</p>
+              <div style="display:flex;gap:6px;margin-top:4px;font-size:0.75rem;">
+                <span style="color:var(--color-safe);font-weight:700;">⭐ ${user.trustScore || 100} pts</span>
+                <span>• Rol: <strong>${user.role?.toUpperCase()}</strong></span>
+                <span>• Estado: <strong style="color:${isSuspended ? 'var(--color-critical)' : (isDisabled ? 'var(--text-muted)' : 'var(--color-safe)')};">${user.status?.toUpperCase()}</strong></span>
+              </div>
+              ${isSuspended ? `<p style="color:var(--color-critical);font-size:0.7rem;margin-top:2px;">⏱️ Suspendido hasta: ${suspendedUntilStr}</p>` : ''}
+            </div>
+          </div>
+
+          <!-- Section 1: Role Configuration -->
+          <div class="mod-section-box">
+            <div class="mod-section-title">🎭 Asignación de Rol</div>
+            ${isSuperAdmin ? `
+              <p style="font-size:0.75rem;color:var(--color-warning);">👑 Este usuario es el Super Administrador permanente del sistema.</p>
+            ` : `
+              <div style="display:flex;gap:8px;">
+                <button class="tactical-btn ${user.role === 'citizen' ? 'active' : ''}" onclick="window.dispatcherApp.applyUserRoleChange('${user.uid}', 'citizen')" style="flex:1;">👤 Ciudadano</button>
+                <button class="tactical-btn ${user.role === 'patrol' ? 'active' : ''}" onclick="window.dispatcherApp.applyUserRoleChange('${user.uid}', 'patrol')" style="flex:1;">🚓 Patrullero</button>
+                <button class="tactical-btn ${user.role === 'admin' ? 'active' : ''}" onclick="window.dispatcherApp.applyUserRoleChange('${user.uid}', 'admin')" style="flex:1;">🛡️ Administrador</button>
+              </div>
+            `}
+          </div>
+
+          <!-- Section 2: Reputation Points -->
+          <div class="mod-section-box">
+            <div class="mod-section-title">⭐ Ajustar Puntos de Reputación</div>
+            <div class="rep-buttons-grid">
+              <button class="btn-rep-delta pos" onclick="window.dispatcherApp.applyReputationDelta('${user.uid}', 10)">+10 pts</button>
+              <button class="btn-rep-delta pos" onclick="window.dispatcherApp.applyReputationDelta('${user.uid}', 5)">+5 pts</button>
+              <button class="btn-rep-delta neg" onclick="window.dispatcherApp.applyReputationDelta('${user.uid}', -5)">-5 pts</button>
+              <button class="btn-rep-delta neg" onclick="window.dispatcherApp.applyReputationDelta('${user.uid}', -10)">-10 pts</button>
+            </div>
+          </div>
+
+          <!-- Section 3: Suspension Duration -->
+          <div class="mod-section-box">
+            <div class="mod-section-title">⏱️ Suspender por Tiempo Definido</div>
+            ${isSuperAdmin ? `
+              <p style="font-size:0.75rem;color:var(--text-muted);">El Super Administrador no puede ser suspendido.</p>
+            ` : (
+              isSuspended ? `
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <span style="font-size:0.75rem;color:var(--color-critical);">Cuenta suspendida</span>
+                  <button class="tactical-btn" style="background:var(--color-safe);color:#0b0f19;font-weight:700;" onclick="window.dispatcherApp.liftSuspension('${user.uid}')">
+                    ✅ Reactivar / Levantar Suspensión
+                  </button>
+                </div>
+              ` : `
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                  <label style="font-size:0.72rem;color:var(--text-muted);">Duración de la Suspensión:</label>
+                  <select id="user-suspend-duration-select" class="tactical-input" style="background:#0e1726;color:#fff;">
+                    <option value="3600000">1 Hora</option>
+                    <option value="86400000" selected>24 Horas (1 Día)</option>
+                    <option value="604800000">7 Días (1 Semana)</option>
+                    <option value="2592000000">30 Días (1 Mes)</option>
+                    <option value="Infinity">Permanente / Indefinido</option>
+                  </select>
+                  <button class="tactical-btn" style="background:rgba(255,42,85,0.2);border-color:var(--color-critical);color:var(--color-critical);font-weight:700;" onclick="window.dispatcherApp.applySuspension('${user.uid}')">
+                    ⚠️ Aplicar Suspensión
+                  </button>
+                </div>
+              `
+            )}
+          </div>
+
+          <!-- Section 4: Activate / Disable Account -->
+          <div class="mod-section-box">
+            <div class="mod-section-title">🔒 Estado de la Cuenta</div>
+            ${isSuperAdmin ? `
+              <p style="font-size:0.75rem;color:var(--text-muted);">Super Administrador activo permanentemente.</p>
+            ` : `
+              <div style="display:flex;gap:10px;">
+                ${isDisabled ? `
+                  <button class="tactical-btn" style="background:rgba(16,185,129,0.2);color:var(--color-safe);flex:1;" onclick="window.dispatcherApp.reactivateAccount('${user.uid}')">
+                    🟢 Activar Cuenta Inhabilitada
+                  </button>
+                ` : `
+                  <button class="tactical-btn" style="background:rgba(255,255,255,0.08);color:var(--text-muted);flex:1;" onclick="window.dispatcherApp.disableAccount('${user.uid}')">
+                    ⛔ Inhabilitar Cuenta
+                  </button>
+                `}
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+
+      modal.classList.remove('hidden');
+    }
+
+    applyUserRoleChange(uid, newRole) {
+      sounds.playClick();
+      firebaseAuth.updateUserRole(uid, newRole);
+      this.openUserModeration(uid);
+      this.renderUsersDirectory();
+    }
+
+    applyReputationDelta(uid, delta) {
+      sounds.playClick();
+      firebaseAuth.adjustUserReputation(uid, delta);
+      this.openUserModeration(uid);
+      this.renderUsersDirectory();
+    }
+
+    applySuspension(uid) {
+      sounds.playWarningPing();
+      const select = document.getElementById('user-suspend-duration-select');
+      const durationMs = select?.value === 'Infinity' ? Infinity : parseInt(select?.value || '86400000', 10);
+      firebaseAuth.suspendUser(uid, durationMs);
+      this.openUserModeration(uid);
+      this.renderUsersDirectory();
+    }
+
+    liftSuspension(uid) {
+      sounds.playClick();
+      firebaseAuth.reactivateUser(uid);
+      this.openUserModeration(uid);
+      this.renderUsersDirectory();
+    }
+
+    disableAccount(uid) {
+      sounds.playWarningPing();
+      firebaseAuth.disableUser(uid);
+      this.openUserModeration(uid);
+      this.renderUsersDirectory();
+    }
+
+    reactivateAccount(uid) {
+      sounds.playClick();
+      firebaseAuth.reactivateUser(uid);
+      this.openUserModeration(uid);
+      this.renderUsersDirectory();
+    }
+
+    setupAdminChat() {
+      const channelBtns = document.querySelectorAll('.admin-chat-channel-item');
+      const roleChips = document.querySelectorAll('.admin-chat-role-chips .chat-role-chip');
+      const chatForm = document.getElementById('admin-chat-form');
+      const chatInput = document.getElementById('admin-chat-input');
+      const priorityRadios = document.querySelectorAll('input[name="admin-priority"]');
+
+      channelBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          sounds.playClick();
+          channelBtns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const channel = btn.dataset.channel;
+          if (window.chatService) window.chatService.selectChannel(channel);
+          this.updateAdminChatHeader(channel);
+          this.renderAdminChat();
+        });
+      });
+
+      roleChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+          sounds.playClick();
+          roleChips.forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+          this.chatRoleFilter = chip.dataset.chatRole;
+          this.renderAdminChatContacts();
+        });
+      });
+
+      priorityRadios.forEach(radio => {
+        radio.addEventListener('change', () => {
+          document.querySelectorAll('.admin-priority-pill').forEach(p => p.classList.remove('active'));
+          radio.closest('.admin-priority-pill')?.classList.add('active');
+        });
+      });
+
+      chatForm?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const text = chatInput?.value.trim();
+        if (!text) return;
+        const selectedPriority = document.querySelector('input[name="admin-priority"]:checked')?.value || 'NORMAL';
+        if (window.chatService) {
+          window.chatService.sendMessage({
+            text,
+            priority: selectedPriority,
+            currentUser: {
+              uid: 'user_admin_super',
+              displayName: 'CENTRAL DE DESPACHO C2',
+              email: 'Gabyolarte2017@gmail.com',
+              role: 'admin',
+              photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=Gaby'
+            }
+          });
         }
-        this.renderUsersDirectory();
+        if (chatInput) chatInput.value = '';
+        sounds.playDispatchChime();
+        this.renderAdminChat();
+      });
+
+      if (window.chatService) {
+        window.chatService.onMessage(() => {
+          this.renderAdminChat();
+        });
+      }
+
+      this.renderAdminChat();
+      this.renderAdminChatContacts();
+    }
+
+    updateAdminChatHeader(channelId, contact = null) {
+      const title = document.getElementById('admin-chat-active-title');
+      const desc = document.getElementById('admin-chat-active-desc');
+      const icon = document.getElementById('admin-chat-active-icon');
+      if (contact) {
+        if (title) title.textContent = `Chat Directo con ${contact.displayName || contact.email}`;
+        if (desc) desc.textContent = `Canal privado 1 a 1 (${contact.role?.toUpperCase()}) • ⭐ ${contact.trustScore || 100} pts`;
+        if (icon) icon.textContent = contact.role === 'patrol' ? '🚓' : '👤';
+      } else if (channelId === 'emergencias') {
+        if (title) title.textContent = 'Canal #emergencias-sos 🚨';
+        if (desc) desc.textContent = 'Despachos críticos y llamados de auxilio en tiempo real.';
+        if (icon) icon.textContent = '🚨';
+      } else if (channelId === 'cuadrante') {
+        if (title) title.textContent = 'Canal #cuadrante-operativo 🚓';
+        if (desc) desc.textContent = 'Coordinación interna de patrullas y móviles policiales.';
+        if (icon) icon.textContent = '🚓';
+      } else {
+        if (title) title.textContent = 'Canal #general-vecinal 💬';
+        if (desc) desc.textContent = 'Transmisión bidireccional entre la central de mando, patrulleros y vecinos.';
+        if (icon) icon.textContent = '💬';
       }
     }
 
-    resetUserReputation(uid) {
-      sounds.playClick();
-      const users = firebaseAuth.getUsersList();
-      const user = users.find(u => u.uid === uid);
-      if (user) {
-        user.trustScore = 75;
-        firebaseAuth.saveUsersList(users);
-        if (window.firebaseSync && window.firebaseSync.db) {
-          window.firebaseSync.db.collection('users').doc(uid).set(user, { merge: true }).catch(() => {});
-        }
-        this.renderUsersDirectory();
+    renderAdminChat() {
+      const container = document.getElementById('admin-chat-messages-feed');
+      if (!container || !window.chatService) return;
+      const messages = window.chatService.getMessagesForCurrentContext('user_admin_super');
+
+      if (messages.length === 0) {
+        container.innerHTML = '<div style="text-align:center;padding:50px;color:var(--text-muted);font-size:0.85rem;">Canal limpio. Sin transmisiones en esta frecuencia.</div>';
+        return;
       }
+
+      container.innerHTML = messages.map(m => {
+        const isSelf = m.senderId === 'user_admin_super' || (m.senderEmail && m.senderEmail.toLowerCase() === 'gabyolarte2017@gmail.com');
+        const timeStr = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const isEmergency = m.priority === 'EMERGENCY';
+        const isWarning = m.priority === 'WARNING';
+        const priorityClass = isEmergency ? 'priority-emergency' : (isWarning ? 'priority-warning' : 'priority-normal');
+
+        const roleBadge = m.senderRole === 'admin' 
+          ? '<span class="contact-role-badge badge-role-admin">🛡️ Admin</span>'
+          : (m.senderRole === 'patrol' 
+            ? '<span class="contact-role-badge badge-role-patrol">🚓 Patrullero</span>'
+            : '<span class="contact-role-badge badge-role-citizen">👤 Vecino</span>');
+
+        return `
+          <div class="chat-msg-row ${isSelf ? 'msg-self' : 'msg-other'}">
+            <img src="${m.senderAvatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=anon'}" alt="${m.senderName}" class="msg-avatar">
+            <div class="msg-bubble ${priorityClass}">
+              <div class="msg-meta-row">
+                <span class="msg-sender-name">${isSelf ? 'C2 Despacho (Tú)' : m.senderName}</span>
+                ${roleBadge}
+                ${isEmergency ? '<span class="msg-priority-badge badge-p-emergency">🚨 EMERGENCIA</span>' : (isWarning ? '<span class="msg-priority-badge badge-p-warning">⚠️ AVISO</span>' : '')}
+                <span class="msg-time">${timeStr}</span>
+              </div>
+              <div class="msg-text-content">${this.escapeHtml(m.text)}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      container.scrollTop = container.scrollHeight;
+    }
+
+    renderAdminChatContacts() {
+      const listEl = document.getElementById('admin-chat-contacts-list');
+      if (!listEl || !window.chatService) return;
+
+      const contacts = window.chatService.getContacts(this.chatRoleFilter);
+      if (contacts.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:0.75rem;">Sin contactos para este filtro.</div>';
+        return;
+      }
+
+      listEl.innerHTML = contacts.map(c => {
+        const isPatrol = c.role === 'patrol';
+        const isAdmin = c.role === 'admin';
+        const roleLabel = isAdmin ? '🛡️ Super Admin' : (isPatrol ? '🚓 Patrullero' : '👤 Ciudadano');
+
+        return `
+          <div class="admin-contact-item" onclick="window.dispatcherApp.openDirectChatAdmin('${c.uid}')">
+            <img src="${c.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${c.uid}`}" alt="${c.displayName}" class="admin-contact-avatar">
+            <div class="admin-contact-meta">
+              <h6>${c.displayName || c.email}</h6>
+              <span>${roleLabel} • ⭐ ${c.trustScore || 100} pts</span>
+            </div>
+            <span style="font-size: 0.9rem; color: var(--color-info);">💬</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    openDirectChatAdmin(uid) {
+      if (!window.chatService) return;
+      const contacts = window.chatService.getContacts('ALL');
+      const contact = contacts.find(c => c.uid === uid);
+      if (contact) {
+        window.chatService.selectDirectContact(contact);
+        this.updateAdminChatHeader(null, contact);
+        document.querySelectorAll('.admin-chat-channel-item').forEach(b => b.classList.remove('active'));
+        this.renderAdminChat();
+      }
+    }
+
+    escapeHtml(str) {
+      return (str || '').replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[m]));
+    }
+
+    setupBulkGenerator() {
+      const modal = document.getElementById('admin-bulk-modal');
+      const openBtn = document.getElementById('btn-bulk-incident-generator');
+      const closeBtn = document.getElementById('btn-close-bulk');
+      const cancelBtn = document.getElementById('btn-cancel-bulk');
+      const executeBtn = document.getElementById('btn-execute-bulk');
+
+      openBtn?.addEventListener('click', () => {
+        sounds.playClick();
+        modal?.classList.remove('hidden');
+      });
+
+      const closeModal = () => {
+        sounds.playClick();
+        modal?.classList.add('hidden');
+      };
+
+      closeBtn?.addEventListener('click', closeModal);
+      cancelBtn?.addEventListener('click', closeModal);
+
+      executeBtn?.addEventListener('click', async () => {
+        sounds.playWarningPing();
+        const count = parseInt(document.getElementById('bulk-count')?.value || '10', 10);
+        const category = document.getElementById('bulk-category')?.value || 'RANDOM';
+        const radiusM = parseInt(document.getElementById('bulk-radius')?.value || '500', 10);
+
+        const center = this.tacticalMap?.map?.getCenter() || geoResolver.currentCoords;
+        const availableCategories = ['ROBBERY', 'FIGHT', 'SUSPICIOUS', 'VANDALISM', 'ACCIDENT', 'MEDICAL'];
+
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = Math.random() * radiusM;
+          const latJitter = (dist * Math.cos(angle)) / 111000;
+          const lngJitter = (dist * Math.sin(angle)) / (111000 * Math.cos(center.lat * Math.PI / 180));
+
+          const chosenCat = (category === 'RANDOM')
+            ? availableCategories[Math.floor(Math.random() * availableCategories.length)]
+            : category;
+
+          const res = swarmEngine.reportIncident({
+            lat: center.lat + latJitter,
+            lng: center.lng + lngJitter,
+            category: chosenCat,
+            note: `Mapeo masivo enjambre #${i + 1}`,
+            userId: `sim_bot_${Math.floor(Math.random() * 9000 + 1000)}`
+          });
+
+          if (res && res.incident) {
+            firebaseSync.saveIncidentToCloud(res.incident);
+          }
+        }
+
+        sounds.playCriticalAlarm();
+        closeModal();
+        this.renderIncidentQueue();
+        if (this.tacticalMap) {
+          this.tacticalMap.renderActiveIncidents();
+          this.tacticalMap.renderHeatmap();
+        }
+      });
+    }
+
+    async renderBroadcastsList() {
+      const container = document.getElementById('admin-broadcasts-list');
+      if (!container) return;
+
+      container.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">Cargando avisos de zona...</div>';
+
+      const broadcasts = await firebaseSync.getBroadcastsFromCloud();
+
+      if (!broadcasts || broadcasts.length === 0) {
+        container.innerHTML = `
+          <div style="padding:40px 20px;text-align:center;color:var(--text-muted);background:rgba(255,255,255,0.02);border-radius:12px;border:1px dashed rgba(255,255,255,0.1);">
+            <span style="font-size:2rem;">📢</span>
+            <p style="margin:8px 0;">No hay avisos de zona registrados actualmente.</p>
+            <small>Usa el botón "Emitir Comunicado Masivo" para crear un aviso con geoperímetro.</small>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = broadcasts.map(bc => {
+        const isActive = bc.active !== false;
+        const timeAgo = Math.max(1, Math.round((Date.now() - (bc.timestamp || Date.now())) / 60000));
+        const radius = bc.radiusMeters || 50;
+
+        return `
+          <div class="admin-broadcast-card ${isActive ? 'active' : 'disabled'}" id="bc-card-${bc.id}" style="background:rgba(18,24,38,0.9);border:1px solid ${isActive ? 'rgba(0,229,255,0.3)' : 'rgba(255,255,255,0.08)'};border-radius:12px;padding:16px;margin-bottom:12px;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:1.4rem;">${isActive ? '🟢' : '⚪'}</span>
+                <div>
+                  <strong style="color:#fff;font-size:1rem;">${bc.title || 'Alerta de Zona'}</strong>
+                  <div style="font-size:0.75rem;color:var(--text-muted);">⏱️ Hace ${timeAgo} min &bull; 📍 Perímetro: ${radius}m</div>
+                </div>
+              </div>
+              <span style="background:${isActive ? 'rgba(0,230,118,0.2)' : 'rgba(255,255,255,0.08)'};color:${isActive ? '#00e676' : 'var(--text-muted)'};padding:4px 10px;border-radius:20px;font-size:0.75rem;font-weight:700;">
+                ${isActive ? 'ACTIVO' : 'DESACTIVADO'}
+              </span>
+            </div>
+
+            <div style="background:rgba(0,0,0,0.25);border-radius:8px;padding:10px 12px;color:rgba(255,255,255,0.9);font-size:0.85rem;line-height:1.4;">
+              ${bc.message || ''}
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:4px;">
+              <button class="tactical-btn" style="padding:6px 14px;font-size:0.8rem;background:${isActive ? 'rgba(255,171,0,0.15)' : 'rgba(0,230,118,0.15)'};color:${isActive ? '#ffab00' : '#00e676'};border:1px solid currentColor;" onclick="window.dispatcherApp.toggleBroadcast('${bc.id}', ${!isActive})">
+                ${isActive ? '⏸️ Desactivar' : '▶️ Activar'}
+              </button>
+              <button class="tactical-btn" style="padding:6px 14px;font-size:0.8rem;background:rgba(255,23,68,0.15);color:#ff1744;border:1px solid currentColor;" onclick="window.dispatcherApp.deleteBroadcast('${bc.id}')">
+                🗑️ Eliminar
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async toggleBroadcast(id, active) {
+      sounds.playClick();
+      await firebaseSync.toggleBroadcastStatus(id, active);
+      this.renderBroadcastsList();
+    }
+
+    async deleteBroadcast(id) {
+      sounds.playWarningPing();
+      await firebaseSync.deleteBroadcast(id);
+      this.renderBroadcastsList();
     }
   }
 

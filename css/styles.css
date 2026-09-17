@@ -388,28 +388,116 @@ html, body.citizen-body {
     overflow: hidden;
   }
 
+  /* Map Canvas is ALWAYS active and visible full screen in the background on mobile */
   .app-map-canvas-pane {
-    display: none;
-    width: 100%;
-    height: 100%;
-    position: relative;
-  }
-  .app-map-canvas-pane.mobile-map-active {
     display: block !important;
-    position: absolute;
-    inset: 0;
+    position: absolute !important;
+    inset: 0 !important;
     z-index: 10;
+    width: 100% !important;
+    height: 100% !important;
   }
 
+  /* Default sidebar full cover for form tabs (report, profile, chat) */
   .app-sidebar-panels {
-    width: 100%;
-    height: 100%;
+    position: absolute;
+    inset: 0;
+    bottom: 56px;
+    z-index: 25;
+    background: var(--bg-secondary);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
 
+  /* When on pure map tab, hide sidebar panels completely */
   .app-sidebar-panels.mobile-map-view {
     display: none !important;
+  }
+
+  /* ==========================================================================
+     NATIVE MAP-APP FLOATING BOTTOM DOCK / BOTTOM SHEET (ROUTES & NAVIGATION)
+     ========================================================================== */
+  .app-sidebar-panels.mobile-dock-active {
+    position: absolute !important;
+    bottom: 56px !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    height: auto !important;
+    max-height: 52vh !important;
+    z-index: 35 !important;
+    background: transparent !important;
+    pointer-events: none !important;
+    overflow: visible !important;
+    display: block !important;
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .app-sidebar-panels.mobile-dock-active #tab-routes {
+    pointer-events: auto !important;
+    background: rgba(11, 17, 32, 0.95) !important;
+    backdrop-filter: blur(24px) !important;
+    -webkit-backdrop-filter: blur(24px) !important;
+    border-radius: 24px 24px 0 0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.16) !important;
+    border-bottom: none !important;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.75) !important;
+    max-height: 52vh !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding: 10px 16px 24px !important;
+    transition: max-height 0.28s cubic-bezier(0.16, 1, 0.3, 1), transform 0.28s ease !important;
+  }
+
+  /* Grab bar handle for bottom sheet */
+  .sheet-grab-bar {
+    width: 44px;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.4);
+    border-radius: 99px;
+    margin: 2px auto 8px auto;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.2s, transform 0.2s;
+  }
+  .sheet-grab-bar:hover, .sheet-grab-bar:active {
+    background: var(--color-primary);
+    transform: scaleX(1.15);
+  }
+
+  /* Collapsed peek state: Leaves 90% of screen for live map navigation */
+  .app-sidebar-panels.mobile-dock-active.collapsed #tab-routes {
+    max-height: 58px !important;
+    overflow: hidden !important;
+    padding-bottom: 8px !important;
+  }
+
+  .sheet-toggle-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 4px 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .sheet-toggle-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--color-safe);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .sheet-toggle-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 2px 8px;
+    color: #cbd5e1;
+    font-size: 0.72rem;
+    font-weight: 600;
   }
 }
 
@@ -1415,6 +1503,64 @@ html, body.citizen-body {
   box-shadow: 0 0 12px rgba(0, 245, 160, 0.5);
 }
 
+.witness-dual-buttons {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.btn-witness-confirm {
+  flex: 1;
+  background: rgba(0, 230, 118, 0.15) !important;
+  border: 1px solid #00e676 !important;
+  color: #00e676 !important;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 8px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: var(--transition-fast);
+  text-align: center;
+  touch-action: manipulation;
+}
+
+.btn-witness-confirm:hover, .btn-witness-confirm:active {
+  background: rgba(0, 230, 118, 0.3) !important;
+  box-shadow: 0 0 12px rgba(0, 230, 118, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-witness-refute {
+  flex: 1;
+  background: rgba(255, 23, 68, 0.15) !important;
+  border: 1px solid #ff1744 !important;
+  color: #ff5252 !important;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 8px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: var(--transition-fast);
+  text-align: center;
+  touch-action: manipulation;
+}
+
+.btn-witness-refute:hover, .btn-witness-refute:active {
+  background: rgba(255, 23, 68, 0.3) !important;
+  box-shadow: 0 0 12px rgba(255, 23, 68, 0.4);
+  transform: translateY(-1px);
+}
+
+.witness-too-far-badge {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
 .feed-section-header {
   font-size: 0.85rem;
   font-weight: 700;
@@ -1962,22 +2108,32 @@ html, body.citizen-body {
   position: absolute;
   inset: -10px;
   border-radius: 50%;
-  animation: wave-expand 2s infinite cubic-bezier(0.1, 0.8, 0.3, 1);
+  display: none; /* By default no pulsation to avoid visual noise */
 }
 
+/* ONLY critical active alerts pulsate with aggressive warning wave */
 .incident-custom-marker.critical .marker-radar-wave {
+  display: block;
   border: 2px solid var(--color-critical);
   background: rgba(255, 42, 85, 0.25);
+  animation: wave-expand 1.5s infinite cubic-bezier(0.1, 0.8, 0.3, 1);
 }
 
+/* Probing (preventivo): Punto amarillo fijo SIN palpitación */
 .incident-custom-marker.probing .marker-radar-wave {
-  border: 2px solid var(--color-warning);
-  background: rgba(255, 184, 0, 0.2);
+  display: none !important;
+}
+
+/* Patrol Attended: Punto azul patrullero SIN palpitación (calmado visualmente) */
+.incident-custom-marker.patrol-attended .marker-radar-wave {
+  display: none !important;
 }
 
 .incident-custom-marker.dispatched .marker-radar-wave {
+  display: block;
   border: 2px solid var(--color-info);
-  background: rgba(0, 210, 255, 0.2);
+  background: rgba(0, 210, 255, 0.15);
+  animation: wave-expand 3s infinite ease-out;
 }
 
 .marker-core {
@@ -1991,11 +2147,19 @@ html, body.citizen-body {
   justify-content: center;
   position: relative;
   z-index: 2;
+  transition: all 0.3s ease;
 }
 
 .critical .marker-core { color: var(--color-critical); box-shadow: var(--shadow-neon-red); }
 .probing .marker-core { color: var(--color-warning); box-shadow: var(--shadow-neon-yellow); }
 .dispatched .marker-core { color: var(--color-info); box-shadow: var(--shadow-neon-cyan); }
+.patrol-attended .marker-core { color: #00b0ff; border-color: #00b0ff; box-shadow: 0 0 14px rgba(0, 176, 255, 0.45); }
+
+.badge-patrol-attended {
+  background: rgba(0, 176, 255, 0.15) !important;
+  color: #00b0ff !important;
+  border: 1px solid rgba(0, 176, 255, 0.4) !important;
+}
 
 .marker-icon { font-size: 1rem; }
 
@@ -2683,5 +2847,1249 @@ html, body.citizen-body {
   50% { transform: translateY(-4px) scale(1.05); }
 }
 
+/* ==========================================================================
+   ADVANCED MOBILE WEB OPTIMIZATIONS (PWA, ERGONOMICS & SAFE AREAS)
+   ========================================================================== */
 
+@media (max-width: 899px) {
+  html, body.citizen-body {
+    width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+    height: 100dvh;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
 
+  .app-viewport {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
+  .app-header {
+    height: calc(54px + env(safe-area-inset-top, 0px));
+    padding-top: max(env(safe-area-inset-top, 0px), 6px);
+    padding-left: max(env(safe-area-inset-left, 0px), 12px);
+    padding-right: max(env(safe-area-inset-right, 0px), 12px);
+  }
+
+  /* Bottom Navigation Bar - Native App Feel */
+  .bottom-nav-bar {
+    height: calc(62px + env(safe-area-inset-bottom, 0px));
+    min-height: calc(62px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+    padding-left: max(env(safe-area-inset-left, 0px), 8px);
+    padding-right: max(env(safe-area-inset-right, 0px), 8px);
+    background: rgba(8, 12, 22, 0.95);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.55);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .nav-tab-item {
+    min-height: 48px;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: transform 0.12s ease, color 0.15s ease;
+  }
+
+  .nav-tab-item:active {
+    transform: scale(0.92);
+  }
+
+  /* Tactical Highlight for SOS in Bottom Bar */
+  .nav-tab-item.nav-sos {
+    position: relative;
+  }
+
+  .nav-tab-item.nav-sos .nav-icon {
+    background: linear-gradient(135deg, rgba(255, 42, 85, 0.28), rgba(255, 42, 85, 0.08));
+    border: 1px solid rgba(255, 42, 85, 0.5);
+    border-radius: var(--radius-full);
+    padding: 4px 12px;
+    box-shadow: 0 0 14px rgba(255, 42, 85, 0.35);
+    transition: all 0.2s ease;
+    display: inline-block;
+  }
+
+  .nav-tab-item.nav-sos.active .nav-icon {
+    background: var(--color-critical);
+    color: #fff;
+    box-shadow: 0 0 22px rgba(255, 42, 85, 0.7);
+  }
+
+  /* Prevent iOS Safari Automatic Zoom on Input Focus */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  /* Floating Tactical Controls on Mobile Map */
+  .map-floating-controls {
+    top: max(env(safe-area-inset-top, 0px) + 8px, 12px);
+    left: max(env(safe-area-inset-left, 0px) + 10px, 10px);
+    right: max(env(safe-area-inset-right, 0px) + 10px, 10px);
+  }
+
+  .time-filter-pill-group {
+    background: rgba(10, 16, 30, 0.9);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    padding: 3px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-glass);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  }
+
+  .time-filter-btn {
+    padding: 6px 11px;
+    font-size: 0.74rem;
+    min-height: 34px;
+    touch-action: manipulation;
+  }
+
+  .btn-recenter-float {
+    min-height: 38px;
+    padding: 6px 14px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+    touch-action: manipulation;
+  }
+
+  .map-legend-pill {
+    bottom: max(env(safe-area-inset-bottom, 0px) + 12px, 14px);
+    left: max(env(safe-area-inset-left, 0px) + 10px, 10px);
+    background: rgba(10, 16, 30, 0.92);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  }
+
+  /* Leaflet Controls Offset on Mobile so they don't cover Header or Filters */
+  .leaflet-top.leaflet-left {
+    top: 66px !important;
+    left: 10px !important;
+  }
+
+  .leaflet-bar a {
+    width: 38px !important;
+    height: 38px !important;
+    line-height: 38px !important;
+    font-size: 17px !important;
+    background-color: rgba(10, 16, 30, 0.92) !important;
+    color: #fff !important;
+    border-color: var(--border-glass) !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+  }
+
+  /* Tab Panel Content Padding on Mobile - Extra room for S25 gesture bar and bottom nav */
+  .tab-panel {
+    padding: 12px 14px !important;
+    padding-bottom: calc(85px + env(safe-area-inset-bottom, 20px)) !important;
+  }
+
+  /* Header Actions Compact Sizing to prevent logo/action overlap */
+  .header-actions {
+    gap: 4px !important;
+  }
+  .btn-auth-google-header {
+    padding: 5px 9px !important;
+    font-size: 0.72rem !important;
+  }
+  .gps-pill {
+    padding: 4px 6px !important;
+    font-size: 0.65rem !important;
+  }
+  .btn-header-link {
+    padding: 5px 8px !important;
+    font-size: 0.72rem !important;
+  }
+
+  /* Panic Mega Button Responsive Clamp - Balanced for S25 without overflowing */
+  .panic-button-wrapper {
+    margin: 8px auto !important;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .mega-panic-btn {
+    width: clamp(140px, 42vw, 175px) !important;
+    height: clamp(140px, 42vw, 175px) !important;
+    padding: 8px !important;
+    touch-action: manipulation;
+  }
+
+  .mega-panic-btn:active {
+    transform: scale(0.95);
+  }
+
+  .panic-btn-text {
+    font-size: clamp(0.78rem, 2.4vw, 0.92rem) !important;
+    font-weight: 800 !important;
+    max-width: 90% !important;
+    text-align: center !important;
+    white-space: normal !important;
+    line-height: 1.15 !important;
+  }
+
+  .panic-btn-sub {
+    font-size: clamp(0.52rem, 1.6vw, 0.62rem) !important;
+    max-width: 85% !important;
+    text-align: center !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .panic-btn-icon {
+    font-size: clamp(1.6rem, 4.5vw, 2.1rem) !important;
+  }
+
+  /* Category Chips Responsive Mobile Grid */
+  .category-chips-grid {
+    grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  .category-chip {
+    min-height: 42px !important;
+    padding: 6px 8px !important;
+    font-size: 0.74rem !important;
+    touch-action: manipulation;
+  }
+
+  .category-chip:active {
+    transform: scale(0.96);
+  }
+
+  /* Route Pin Selector Bar Mobile Alignment - No button overlap */
+  .route-pin-selector-bar {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr auto !important;
+    gap: 6px !important;
+    width: 100% !important;
+    margin-bottom: 10px !important;
+  }
+
+  .pin-mode-btn {
+    min-height: 40px !important;
+    padding: 6px 4px !important;
+    font-size: 0.74rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    white-space: nowrap !important;
+    touch-action: manipulation;
+  }
+
+  /* Map Floating Controls: never wrap or overlap Leaflet controls */
+  .map-floating-controls {
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+  }
+
+  .time-filter-btn {
+    padding: 5px 8px !important;
+    font-size: 0.72rem !important;
+    min-height: 32px !important;
+  }
+
+  .btn-recenter-float {
+    padding: 5px 10px !important;
+    font-size: 0.72rem !important;
+    min-height: 32px !important;
+  }
+
+  /* Feed Cards Touch Ergonomics */
+  .incident-card {
+    padding: 12px 10px !important;
+  }
+
+  .btn-witness-vote {
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .btn-witness-vote:active {
+    transform: scale(0.96);
+  }
+
+  .sim-btn-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .btn-sim {
+    min-height: 44px;
+    font-size: 0.76rem;
+    padding: 8px;
+    touch-action: manipulation;
+  }
+
+  .btn-sim:active {
+    transform: scale(0.95);
+  }
+}
+
+/* Guest Reporting Restricted Card */
+.guest-report-lock-card {
+  background: rgba(18, 24, 40, 0.95);
+  border: 1px solid rgba(255, 184, 0, 0.35);
+  border-radius: var(--radius-lg);
+  padding: clamp(16px, 4vw, 24px);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  margin-top: 8px;
+}
+
+.lock-card-icon {
+  font-size: 2.2rem;
+  background: rgba(255, 184, 0, 0.15);
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 184, 0, 0.4);
+}
+
+.lock-card-body h3 {
+  font-size: clamp(0.95rem, 3vw, 1.15rem);
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+.lock-card-body p {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  max-width: 380px;
+  margin: 0 auto;
+}
+
+.lock-guest-perks {
+  margin: 12px 0 16px;
+  padding: 8px 12px;
+  background: rgba(0, 245, 160, 0.08);
+  border: 1px solid rgba(0, 245, 160, 0.25);
+  border-radius: var(--radius-md);
+  font-size: 0.76rem;
+  color: var(--color-safe);
+  line-height: 1.35;
+}
+
+.btn-guest-unlock-login {
+  background: linear-gradient(135deg, #00d2ff 0%, #0072ff 100%);
+  color: #fff;
+  border: none;
+  font-size: 0.84rem;
+  font-weight: 800;
+  padding: 12px 20px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 18px rgba(0, 114, 255, 0.45);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  touch-action: manipulation;
+}
+
+.btn-guest-unlock-login:active {
+  transform: scale(0.96);
+}
+
+/* Guest Open Navigation Banner in Tab Routes */
+.guest-nav-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(135deg, rgba(0, 245, 160, 0.12) 0%, rgba(0, 210, 255, 0.12) 100%);
+  border: 1px solid rgba(0, 245, 160, 0.3);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.nav-banner-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+.nav-banner-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nav-banner-text strong {
+  font-size: 0.78rem;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.nav-banner-text span {
+  font-size: 0.68rem;
+  color: var(--color-safe);
+}
+
+/* Responsive Text Toggles */
+.auth-btn-text-short {
+  display: none;
+}
+.pin-text-short {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .auth-btn-text-full {
+    display: none;
+  }
+  .auth-btn-text-short {
+    display: inline;
+  }
+  .pin-text-full {
+    display: none;
+  }
+  .pin-text-short {
+    display: inline;
+  }
+}
+
+/* 100% Free OpenStreetMap High-Contrast Tactical Cyber Map (Zero API Key) */
+.leaflet-tile-pane .colmena-dark-tiles {
+  filter: brightness(0.6) invert(1) contrast(2.5) hue-rotate(200deg) saturate(0.3) brightness(0.75);
+}
+
+.leaflet-container {
+  background: #070a12 !important;
+}
+
+/* ==========================================================================
+   CITIZEN APP - COMUNICADOR VECINAL & PANEL DE CONTACTOS MULTI-ROL (TAB CHAT)
+   ========================================================================== */
+.chat-module-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 480px;
+  background: rgba(11, 17, 33, 0.95);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-glass);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Chat Header */
+.chat-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #0d1527;
+  border-bottom: 1px solid var(--border-glass);
+  gap: 10px;
+}
+.chat-active-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.chat-active-icon {
+  font-size: 1.4rem;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-glass);
+}
+.chat-active-title h3 {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.2;
+}
+.chat-active-title p {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+.chat-toggle-contacts-btn {
+  background: rgba(0, 210, 255, 0.12);
+  border: 1px solid rgba(0, 210, 255, 0.35);
+  color: var(--color-info);
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.chat-toggle-contacts-btn:hover {
+  background: rgba(0, 210, 255, 0.25);
+  color: #fff;
+}
+
+/* Channels Bar */
+.chat-channels-bar {
+  display: flex;
+  padding: 8px 12px;
+  background: #080d19;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  gap: 8px;
+  overflow-x: auto;
+}
+.chat-channel-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.chat-channel-btn:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.chat-channel-btn.active {
+  background: rgba(0, 210, 255, 0.18);
+  border-color: var(--color-info);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);
+}
+.chat-channel-btn.channel-urgent.active {
+  background: rgba(255, 42, 85, 0.2);
+  border-color: var(--color-critical);
+  box-shadow: 0 0 10px rgba(255, 42, 85, 0.25);
+}
+.chat-channel-btn.channel-patrol.active {
+  background: rgba(0, 176, 255, 0.2);
+  border-color: #00b0ff;
+  box-shadow: 0 0 10px rgba(0, 176, 255, 0.25);
+}
+
+/* Contacts Drawer (Segmented by Roles) */
+.chat-contacts-drawer {
+  position: absolute;
+  top: 50px;
+  right: 0;
+  width: min(340px, 90%);
+  height: calc(100% - 50px);
+  background: #0b1122;
+  border-left: 1px solid var(--border-glass);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.25s ease-out;
+}
+.chat-contacts-drawer.hidden {
+  display: none !important;
+}
+.contacts-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.contacts-drawer-header h4 {
+  font-size: 0.85rem;
+  color: #fff;
+}
+.btn-close-contacts {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.chat-role-filters {
+  display: flex;
+  padding: 8px 12px;
+  gap: 6px;
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.role-filter-chip {
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.role-filter-chip.active {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}
+.contacts-list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chat-contact-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.chat-contact-card:hover {
+  background: rgba(0, 210, 255, 0.08);
+  border-color: rgba(0, 210, 255, 0.3);
+}
+.chat-contact-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border-glass);
+}
+.chat-contact-info {
+  flex: 1;
+  min-width: 0;
+}
+.chat-contact-info h5 {
+  font-size: 0.8rem;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-contact-info p {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.contact-role-badge {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-top: 2px;
+}
+.badge-role-admin { background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4); }
+.badge-role-patrol { background: rgba(0, 176, 255, 0.2); color: #00b0ff; border: 1px solid rgba(0, 176, 255, 0.4); }
+.badge-role-citizen { background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4); }
+
+/* Messages Viewport */
+.chat-messages-viewport {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chat-msg-row {
+  display: flex;
+  gap: 10px;
+  max-width: 88%;
+}
+.chat-msg-row.msg-self {
+  margin-left: auto;
+  flex-direction: row-reverse;
+}
+.msg-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-glass);
+  flex-shrink: 0;
+}
+.msg-bubble {
+  background: #111a30;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.chat-msg-row.msg-self .msg-bubble {
+  background: #132742;
+  border-color: rgba(0, 210, 255, 0.25);
+}
+
+/* Priority Card Accents */
+.msg-bubble.priority-emergency {
+  border-left: 4px solid var(--color-critical);
+  background: rgba(255, 42, 85, 0.12);
+}
+.msg-bubble.priority-warning {
+  border-left: 4px solid var(--color-warning);
+  background: rgba(255, 184, 0, 0.1);
+}
+.msg-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.7rem;
+}
+.msg-sender-name {
+  font-weight: 700;
+  color: #e2e8f0;
+}
+.msg-time {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+}
+.msg-priority-badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.badge-p-emergency { background: #ff2a55; color: #fff; }
+.badge-p-warning { background: #ffb800; color: #0b0f19; }
+.badge-p-normal { background: rgba(255, 255, 255, 0.1); color: var(--text-muted); }
+.msg-text-content {
+  font-size: 0.82rem;
+  color: #fff;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+/* Chat Composer */
+.chat-composer-form {
+  padding: 10px 14px;
+  background: #080d19;
+  border-top: 1px solid var(--border-glass);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chat-priority-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.priority-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.priority-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  transition: all 0.2s ease;
+}
+.priority-chip input {
+  display: none;
+}
+.priority-chip.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.priority-chip.priority-warning.active {
+  background: rgba(255, 184, 0, 0.2);
+  color: #ffb800;
+  border-color: #ffb800;
+}
+.priority-chip.priority-emergency.active {
+  background: rgba(255, 42, 85, 0.2);
+  color: #ff2a55;
+  border-color: #ff2a55;
+}
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+}
+.chat-input-field {
+  flex: 1;
+  height: 38px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+}
+.btn-chat-send {
+  background: var(--color-info);
+  color: #0b0f19;
+  border: none;
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.chat-contact-card:hover {
+  background: rgba(0, 210, 255, 0.08);
+  border-color: rgba(0, 210, 255, 0.3);
+}
+.chat-contact-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border-glass);
+}
+.chat-contact-info {
+  flex: 1;
+  min-width: 0;
+}
+.chat-contact-info h5 {
+  font-size: 0.8rem;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-contact-info p {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.contact-role-badge {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-top: 2px;
+}
+.badge-role-admin { background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4); }
+.badge-role-patrol { background: rgba(0, 176, 255, 0.2); color: #00b0ff; border: 1px solid rgba(0, 176, 255, 0.4); }
+.badge-role-citizen { background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4); }
+
+/* Messages Viewport */
+.chat-messages-viewport {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chat-msg-row {
+  display: flex;
+  gap: 10px;
+  max-width: 88%;
+}
+.chat-msg-row.msg-self {
+  margin-left: auto;
+  flex-direction: row-reverse;
+}
+.msg-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-glass);
+  flex-shrink: 0;
+}
+.msg-bubble {
+  background: #111a30;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.chat-msg-row.msg-self .msg-bubble {
+  background: #132742;
+  border-color: rgba(0, 210, 255, 0.25);
+}
+
+/* Priority Card Accents */
+.msg-bubble.priority-emergency {
+  border-left: 4px solid var(--color-critical);
+  background: rgba(255, 42, 85, 0.12);
+}
+.msg-bubble.priority-warning {
+  border-left: 4px solid var(--color-warning);
+  background: rgba(255, 184, 0, 0.1);
+}
+.msg-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.7rem;
+}
+.msg-sender-name {
+  font-weight: 700;
+  color: #e2e8f0;
+}
+.msg-time {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+}
+.msg-priority-badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.badge-p-emergency { background: #ff2a55; color: #fff; }
+.badge-p-warning { background: #ffb800; color: #0b0f19; }
+.badge-p-normal { background: rgba(255, 255, 255, 0.1); color: var(--text-muted); }
+.msg-text-content {
+  font-size: 0.82rem;
+  color: #fff;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+/* Chat Composer */
+.chat-composer-form {
+  padding: 10px 14px;
+  background: #080d19;
+  border-top: 1px solid var(--border-glass);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chat-priority-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.priority-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.priority-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  transition: all 0.2s ease;
+}
+.priority-chip input {
+  display: none;
+}
+.priority-chip.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.priority-chip.priority-warning.active {
+  background: rgba(255, 184, 0, 0.2);
+  color: #ffb800;
+  border-color: #ffb800;
+}
+.priority-chip.priority-emergency.active {
+  background: rgba(255, 42, 85, 0.2);
+  color: #ff2a55;
+  border-color: #ff2a55;
+}
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+}
+.chat-input-field {
+  flex: 1;
+  height: 38px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+}
+.btn-chat-send {
+  background: var(--color-info);
+  color: #0b0f19;
+  border: none;
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+}
+.btn-chat-send:hover {
+  filter: brightness(1.15);
+  box-shadow: var(--shadow-neon-cyan);
+}
+
+/* ==========================================================================
+   GOOGLE ACCOUNT CHOOSER MODAL (1-TAP MOBILE & DESKTOP AUTH)
+   ========================================================================== */
+.google-chooser-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 15, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  padding: 16px;
+  animation: fadeInModal 0.2s ease-out;
+}
+
+.google-chooser-backdrop.hidden {
+  display: none !important;
+}
+
+.google-chooser-sheet {
+  background: #1a2234;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: scaleUpModal 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.google-chooser-header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.google-brand-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.btn-close-google-chooser {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.8rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.btn-close-google-chooser:hover {
+  color: #fff;
+}
+
+.google-accounts-list {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.google-account-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.google-account-item:hover, .google-account-item:active {
+  background: rgba(0, 245, 160, 0.1);
+  border-color: rgba(0, 245, 160, 0.35);
+  transform: translateY(-1px);
+}
+
+.google-account-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  background: #0f172a;
+  flex-shrink: 0;
+}
+
+.google-account-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.account-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.account-email {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge-role-pill {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.badge-role-pill.admin-pill {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ff5c77;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.badge-role-pill.patrol-pill {
+  background: rgba(0, 176, 255, 0.2);
+  color: #00b0ff;
+  border: 1px solid rgba(0, 176, 255, 0.4);
+}
+
+.badge-role-pill.citizen-pill {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.account-arrow {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.custom-google-account-section {
+  margin-top: 4px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+
+.btn-toggle-custom-google {
+  background: transparent;
+  border: none;
+  color: #38bdf8;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.btn-toggle-custom-google:hover {
+  text-decoration: underline;
+}
+
+.custom-email-drawer {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.google-custom-input {
+  flex: 1;
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #fff;
+  font-size: 0.88rem;
+}
+
+.google-custom-input:focus {
+  border-color: #38bdf8;
+  outline: none;
+}
+
+.btn-confirm-custom-google {
+  background: #0284c7;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0 16px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.google-chooser-footer {
+  padding: 12px 20px 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.72rem;
+  color: #64748b;
+  line-height: 1.4;
+  text-align: center;
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleUpModal {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}

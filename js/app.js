@@ -141,6 +141,11 @@ class CitizenApp {
     // Panic Button Click -> Starts 3-second safety abort countdown
     if (panicBtn) {
       panicBtn.addEventListener('click', () => {
+        if (window.firebaseAuth && !window.firebaseAuth.currentUser) {
+          sounds.playWarningPing();
+          document.getElementById('marketing-login-modal')?.classList.remove('hidden');
+          return;
+        }
         sounds.playWarningPing();
         this.startPanicCountdown();
       });

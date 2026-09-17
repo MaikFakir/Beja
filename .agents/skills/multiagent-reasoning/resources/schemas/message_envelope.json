@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://antigravity.google/schemas/message-envelope.v1.json",
+  "title": "AntigravityMessageEnvelopeSchema",
+  "description": "JSON schema for asynchronous inter-agent message envelopes and payload contracts.",
+  "type": "object",
+  "required": [
+    "message_id",
+    "sender_id",
+    "recipient_id",
+    "timestamp",
+    "message_type",
+    "context",
+    "content",
+    "action"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "message_id": {
+      "type": "string",
+      "pattern": "^msg-[a-z0-9_-]+$",
+      "description": "Unique identifier for the message."
+    },
+    "sender_id": {
+      "type": "string",
+      "description": "Identifier or archetype role of the sending agent."
+    },
+    "recipient_id": {
+      "type": "string",
+      "description": "Identifier or archetype role of the target recipient."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of message creation."
+    },
+    "message_type": {
+      "type": "string",
+      "enum": [
+        "task_dispatch",
+        "handoff_report",
+        "heartbeat_update",
+        "clarification_request",
+        "critique_verdict",
+        "consensus_vote",
+        "error_escalation"
+      ],
+      "description": "Semantic classification of the message."
+    },
+    "context": {
+      "type": "string",
+      "minLength": 5,
+      "description": "Brief description of current workflow phase, task ID, or active context."
+    },
+    "content": {
+      "type": "string",
+      "minLength": 5,
+      "description": "Core communication content, executive summary of deliverable, or status update."
+    },
+    "action": {
+      "type": "string",
+      "minLength": 3,
+      "description": "Explicit instruction detailing expected next action by the recipient."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Optional structured data or artifact references accompanying the message.",
+      "properties": {
+        "artifact_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of relative filesystem paths to deliverables (e.g. .agents/planner/plan.md)."
+        },
+        "verdict": {
+          "type": "string",
+          "enum": ["APPROVED", "REQUEST_CHANGES", "REJECTED"],
+          "description": "Verdict string if message_type is critique_verdict."
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Numeric evaluation or confidence score."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

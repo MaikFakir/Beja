@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AICodeGuardianQualityGate",
+  "description": "Standard Acceptance Gate for AI-assisted code changes",
+  "type": "object",
+  "required": [
+    "design_checks",
+    "security_checks",
+    "structuring_checks",
+    "coding_invariants",
+    "verification_passed"
+  ],
+  "properties": {
+    "design_checks": {
+      "type": "object",
+      "properties": {
+        "zero_important_flags": { "type": "boolean", "default": true },
+        "design_tokens_reused": { "type": "boolean", "default": true },
+        "fluid_responsive_layout": { "type": "boolean", "default": true },
+        "wcag_contrast_compliant": { "type": "boolean", "default": true }
+      },
+      "required": ["zero_important_flags", "design_tokens_reused", "fluid_responsive_layout"]
+    },
+    "security_checks": {
+      "type": "object",
+      "properties": {
+        "zero_hardcoded_secrets": { "type": "boolean", "default": true },
+        "no_unescaped_innerhtml": { "type": "boolean", "default": true },
+        "zero_eval_usage": { "type": "boolean", "default": true },
+        "dependencies_verified": { "type": "boolean", "default": true }
+      },
+      "required": ["zero_hardcoded_secrets", "no_unescaped_innerhtml", "zero_eval_usage"]
+    },
+    "structuring_checks": {
+      "type": "object",
+      "properties": {
+        "dry_reuse_existing_helpers": { "type": "boolean", "default": true },
+        "single_responsibility_maintained": { "type": "boolean", "default": true },
+        "paradigm_consistent": { "type": "boolean", "default": true }
+      },
+      "required": ["dry_reuse_existing_helpers", "paradigm_consistent"]
+    },
+    "coding_invariants": {
+      "type": "object",
+      "properties": {
+        "zero_lazy_truncation_comments": { "type": "boolean", "default": true },
+        "dom_ids_100_percent_preserved": { "type": "boolean", "default": true },
+        "function_signatures_stable": { "type": "boolean", "default": true },
+        "edge_case_logic_retained": { "type": "boolean", "default": true }
+      },
+      "required": ["zero_lazy_truncation_comments", "dom_ids_100_percent_preserved", "function_signatures_stable"]
+    },
+    "verification_passed": {
+      "type": "boolean"
+    }
+  }
+}

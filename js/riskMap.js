@@ -54,10 +54,12 @@ export class RiskMap {
         attributionControl: false
       });
 
-      // CartoDB Dark Matter tile layer for high-contrast tactical night aesthetic
+      // 100% Free CartoDB Dark Matter Tile Layer (Zero API Key Required - Sleek Cyberpunk Dark Theme)
       const tileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19,
         subdomains: 'abcd',
+        maxZoom: 20,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        className: 'colmena-dark-tiles',
         errorTileUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
       });
       tileLayer.addTo(this.map);
@@ -250,11 +252,16 @@ export class RiskMap {
           </div>
           <div class="popup-body">
             <p class="popup-time">Reportado hace ${Math.max(1, Math.round((Date.now() - inc.createdAt)/60000))} min</p>
-            <p class="popup-swarm-detail">👥 <strong>${inc.reportCount} ciudadanos</strong> en el enjambre de 50m.</p>
+            <p class="popup-swarm-detail">👥 <strong>${inc.reportCount} confirmación(es)</strong>${(inc.refutations && inc.refutations.length) ? ` &bull; ⚠️ ${inc.refutations.length} desmentidos` : ''}</p>
             ${inc.assignedUnit ? `<p class="popup-unit">🚔 ${inc.assignedUnit.code} (ETA ~${inc.assignedUnit.etaMinutes} min)</p>` : ''}
-            <button class="btn-popup-witness" onclick="if(window.citizenApp) window.citizenApp.voteWitness('${inc.id}')" style="margin-top:8px; width:100%; background:linear-gradient(135deg,#00f5a0 0%,#00d2ff 100%); color:#050c18; border:none; padding:7px 10px; border-radius:4px; font-weight:800; font-size:0.74rem; cursor:pointer;">
-              🤝 Validar como Testigo (+5 pts)
-            </button>
+            <div style="display:flex;gap:6px;margin-top:8px;">
+              <button class="btn-popup-witness" onclick="if(window.citizenApp) window.citizenApp.voteIncident('${inc.id}', true)" style="flex:1; background:rgba(0,230,118,0.2); border:1px solid #00e676; color:#00e676; padding:6px; border-radius:4px; font-weight:800; font-size:0.72rem; cursor:pointer;">
+                ✅ Es Real
+              </button>
+              <button class="btn-popup-witness" onclick="if(window.citizenApp) window.citizenApp.voteIncident('${inc.id}', false)" style="flex:1; background:rgba(255,23,68,0.2); border:1px solid #ff1744; color:#ff5252; padding:6px; border-radius:4px; font-weight:800; font-size:0.72rem; cursor:pointer;">
+                ❌ Es Falso
+              </button>
+            </div>
           </div>
         </div>
       `;
@@ -338,8 +345,25 @@ export class RiskMap {
     let directSteps = [];
 
     try {
-      const osrmUrl = `https://router.project-osrm.org/route/v1/${mode}/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`;
-      const resp = await fetch(osrmUrl);
+      let resp;
+      if (mode === 'walking') {
+        try {
+          resp = await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/foot/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
+        } catch (e) {}
+        if (!resp || !resp.ok) {
+          try {
+            resp = await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
+          } catch (e) {}
+        }
+      } else {
+        try {
+          resp = await fetch(`https://routing.openstreetmap.de/routed-car/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
+        } catch (e) {}
+      }
+
+      if (!resp || !resp.ok) {
+        resp = await fetch(`https://router.project-osrm.org/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
+      }
       if (resp.ok) {
         const data = await resp.json();
         if (data.routes && data.routes.length > 0) {
@@ -441,8 +465,25 @@ export class RiskMap {
           const viaExit = [tLat + pOffLat + latOff, tLng + pOffLng + lngOff];
 
           try {
-            const detourUrl = `https://router.project-osrm.org/route/v1/${mode}/${startLatLng.lng},${startLatLng.lat};${viaEntry[1]},${viaEntry[0]};${viaApex[1]},${viaApex[0]};${viaExit[1]},${viaExit[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`;
-            const dResp = await fetch(detourUrl);
+            let dResp;
+            if (mode === 'walking') {
+              try {
+                dResp = await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/foot/${startLatLng.lng},${startLatLng.lat};${viaEntry[1]},${viaEntry[0]};${viaApex[1]},${viaApex[0]};${viaExit[1]},${viaExit[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
+              } catch (e) {}
+              if (!dResp || !dResp.ok) {
+                try {
+                  dResp = await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${viaEntry[1]},${viaEntry[0]};${viaApex[1]},${viaApex[0]};${viaExit[1]},${viaExit[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
+                } catch (e) {}
+              }
+            } else {
+              try {
+                dResp = await fetch(`https://routing.openstreetmap.de/routed-car/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${viaEntry[1]},${viaEntry[0]};${viaApex[1]},${viaApex[0]};${viaExit[1]},${viaExit[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
+              } catch (e) {}
+            }
+
+            if (!dResp || !dResp.ok) {
+              dResp = await fetch(`https://router.project-osrm.org/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${viaEntry[1]},${viaEntry[0]};${viaApex[1]},${viaApex[0]};${viaExit[1]},${viaExit[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
+            }
             if (dResp.ok) {
               const dData = await dResp.json();
               if (dData.routes && dData.routes.length > 0) {

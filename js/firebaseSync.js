@@ -60,10 +60,17 @@ class FirebaseSyncService {
     this.unsubscribeIncidents = this.db.collection('incidents').onSnapshot((snapshot) => {
       const cloudIncidents = [];
       let hasNewIncident = false;
+      const dismissedIds = swarmEngine.getDismissedIds ? swarmEngine.getDismissedIds() : [];
 
       snapshot.forEach(doc => {
         const data = doc.data();
         data.id = doc.id;
+
+        // Skip resolved, false alarm, or dismissed incidents
+        if (data.status === INCIDENT_STATES.RESOLVED || data.status === INCIDENT_STATES.FALSE_ALARM || dismissedIds.includes(doc.id)) {
+          return;
+        }
+
         cloudIncidents.push(data);
 
         // Detectar si es un incidente nuevo para disparar sirena comunitaria
@@ -85,7 +92,7 @@ class FirebaseSyncService {
         if (latest.status === INCIDENT_STATES.CRITICAL_SWARM) {
           sounds.playCriticalAlarm();
           sounds.speakAlert(`Alerta comunitaria: ${latest.category || 'Peligro'} confirmado.`);
-        } else {
+        } else if (latest.status !== INCIDENT_STATES.PATROL_ATTENDED) {
           sounds.playWarningPing();
         }
       }
@@ -111,9 +118,25 @@ class FirebaseSyncService {
   async saveIncidentToCloud(incident) {
     if (!this.isConfigured || !this.db) return;
     try {
-      await this.db.collection('incidents').doc(incident.id).set(incident, { merge: true });
+      if (incident.status === INCIDENT_STATES.RESOLVED || incident.status === INCIDENT_STATES.FALSE_ALARM) {
+        await this.deleteIncidentFromCloud(incident.id);
+      } else {
+        await this.db.collection('incidents').doc(incident.id).set(incident, { merge: true });
+      }
     } catch (err) {
       console.error('Error al guardar incidente en Firebase:', err);
+    }
+  }
+
+  /**
+   * Elimina un incidente resuelto o falso de Firestore para que no resurja
+   */
+  async deleteIncidentFromCloud(incidentId) {
+    if (!this.isConfigured || !this.db) return;
+    try {
+      await this.db.collection('incidents').doc(incidentId).delete();
+    } catch (err) {
+      console.warn('Error al eliminar incidente de Firebase:', err);
     }
   }
 

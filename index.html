@@ -2,7 +2,11 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#070a12">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Colmena Segura 🐝🚨 | Alertas Comunitarias en Enjambre y Mapa de Riesgo</title>
   <meta name="description" content="Sistema inteligente de detección comunitaria de incidentes por consenso en colmena, mapa de calor y rutas seguras estilo Waze.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐝</text></svg>">
@@ -45,6 +49,9 @@
         <button class="desktop-tab-btn" data-tab="profile" id="d-nav-profile">
           <span>🐝</span> Colmena & Reputación
         </button>
+        <button class="desktop-tab-btn" data-tab="chat" id="d-nav-chat">
+          <span>💬</span> Chat & Contactos
+        </button>
       </nav>
 
       <div class="header-actions">
@@ -54,7 +61,7 @@
         <!-- Google User Auth Pill in Top Bar -->
         <div class="user-auth-header-container" id="user-auth-header-slot">
           <a href="login.html" class="btn-auth-google-header" id="btn-login-google-header" title="Iniciar sesión con cuenta de Google">
-            <span class="g-icon">🔐</span><span class="auth-btn-text"> Iniciar con Google</span>
+            <span class="g-icon">🔐</span><span class="auth-btn-text"><span class="auth-btn-text-full"> Iniciar con Google</span><span class="auth-btn-text-short"> Entrar</span></span>
           </a>
         </div>
 
@@ -123,42 +130,63 @@
              ==================================================================== -->
         <section class="tab-panel" id="tab-report" aria-label="Reporte de Emergencia SOS">
           
-          <div class="sos-instruction-header">
-            <h2>Alerta Comunitaria</h2>
-            <p>Presiona el botón para alertar al enjambre. Si otro ciudadano cercano coincide, se activará la alerta roja oficial.</p>
-          </div>
-
-          <!-- Interactive SOS Panic Button -->
-          <div class="panic-button-wrapper">
-            <div class="panic-radar-ring" aria-hidden="true"></div>
-            <div class="panic-pulse-glow" aria-hidden="true"></div>
-            <button class="mega-panic-btn" id="main-panic-btn" aria-label="Botón de Pánico Emergencia">
-              <span class="panic-btn-icon">🚨</span>
-              <span class="panic-btn-text">ALERTA SOS</span>
-              <span class="panic-btn-sub">1 TOQUE DISPARA</span>
-            </button>
-          </div>
-
-          <!-- Category Selector -->
-          <div class="category-selector-tray">
-            <span class="tray-label">Tipo de Incidente (Selección rápida)</span>
-            <div class="category-chips-grid">
-              <button class="category-chip active" data-category="FIGHT">
-                <span>⚔️</span> Riña / Pelea
-              </button>
-              <button class="category-chip" data-category="ROBBERY">
-                <span>🚨</span> Robo / Asalto
-              </button>
-              <button class="category-chip" data-category="MEDICAL">
-                <span>🚑</span> Emergencia Médica
-              </button>
-              <button class="category-chip" data-category="SUSPICIOUS">
-                <span>👁️</span> Sospechoso
+          <!-- Guest Restricted Notice Card (Visible when not logged in) -->
+          <div class="guest-report-lock-card" id="guest-report-lock-card">
+            <div class="lock-card-icon">🔒</div>
+            <div class="lock-card-body">
+              <h3>Registro Reservado a Ciudadanos</h3>
+              <p>Para proteger la confiabilidad del enjambre y evitar falsas alarmas, el reporte de eventos SOS requiere inicio de sesión con tu cuenta de Google o correo verificado.</p>
+              <div class="lock-guest-perks">
+                <span class="lock-perk-item">🧭 Como <strong>invitado</strong> puedes usar libremente la <strong>Navegación y Rutas Seguras</strong>.</span>
+              </div>
+              <button class="btn-guest-unlock-login" id="btn-guest-report-login">
+                <span>🔐</span> Iniciar Sesión para Habilitar Reportes
               </button>
             </div>
+          </div>
 
-            <div class="optional-note-box">
-              <input type="text" id="report-note-input" class="tactical-input" placeholder="Nota o detalle rápido (opcional)..." maxlength="120">
+          <!-- Authorized Report Container (Visible when logged in) -->
+          <div class="auth-report-content hidden" id="auth-report-allowed-content">
+            <div class="sos-instruction-header">
+              <h2>Alerta Comunitaria</h2>
+              <p>Presiona el botón para alertar al enjambre. Si otro ciudadano cercano coincide, se activará la alerta roja oficial.</p>
+            </div>
+
+            <!-- Category Selector (Selección Rápida en Primer Plano) -->
+            <div class="category-selector-tray" style="margin-bottom: 14px;">
+              <span class="tray-label">1. Selecciona el Tipo de Incidente:</span>
+              <div class="category-chips-grid">
+                <button class="category-chip active" data-category="FIGHT">
+                  <span>⚔️</span> Riña / Pelea
+                </button>
+                <button class="category-chip" data-category="ROBBERY">
+                  <span>🚨</span> Robo / Asalto
+                </button>
+                <button class="category-chip" data-category="MEDICAL">
+                  <span>🚑</span> Médica
+                </button>
+                <button class="category-chip" data-category="ACCIDENT">
+                  <span>🚗</span> Accidente
+                </button>
+                <button class="category-chip" data-category="SUSPICIOUS">
+                  <span>👁️</span> Sospechoso
+                </button>
+              </div>
+
+              <div class="optional-note-box" style="margin-top: 10px;">
+                <input type="text" id="report-note-input" class="tactical-input" placeholder="Nota o detalle rápido (opcional)..." maxlength="120">
+              </div>
+            </div>
+
+            <!-- Interactive SOS Panic Button (Disparo con Tipo Confirmado) -->
+            <div class="panic-button-wrapper">
+              <div class="panic-radar-ring" aria-hidden="true"></div>
+              <div class="panic-pulse-glow" aria-hidden="true"></div>
+              <button class="mega-panic-btn" id="main-panic-btn" aria-label="Botón de Pánico Emergencia">
+                <span class="panic-btn-icon" id="panic-btn-active-icon">⚔️</span>
+                <span class="panic-btn-text" id="panic-btn-active-text">REPORTAR RIÑA</span>
+                <span class="panic-btn-sub" id="panic-btn-active-sub">TOCA PARA ACTIVAR COLMENA</span>
+              </button>
             </div>
           </div>
 
@@ -168,9 +196,23 @@
              TAB 3: NAVEGACIÓN REAL INTELIGENTE (ORIGEN/DESTINO INTERACTIVO)
              ==================================================================== -->
         <section class="tab-panel" id="tab-routes" aria-label="Navegador de Rutas Seguras">
+          <!-- Mobile Floating Sheet Grab Handle & Collapse Header -->
+          <div class="sheet-grab-bar" id="routes-sheet-grab-bar" title="Toca para alternar tamaño del panel"></div>
+          <div class="sheet-toggle-header" id="routes-sheet-toggle-btn" title="Alternar vista de mapa">
+            <span class="sheet-toggle-title">🛡️ Navegación & Rutas Seguras</span>
+            <span class="sheet-toggle-btn" id="sheet-toggle-label">Plegar ⬇️</span>
+          </div>
           
+          <div class="guest-nav-banner">
+            <span class="nav-banner-icon">🧭</span>
+            <div class="nav-banner-text">
+              <strong>Navegación Libre y Rutas Seguras</strong>
+              <span>Acceso 100% abierto e ilimitado para Invitados y Ciudadanos</span>
+            </div>
+          </div>
+
           <div class="routing-header">
-            <h3>🧭 Navegación Segura por Calles</h3>
+            <h3>Navegación Inteligente por Calles</h3>
             <p>Elige tu punto de partida y destino en el mapa o búscalo por dirección para calcular la mejor ruta esquivando zonas de peligro.</p>
           </div>
 
@@ -188,14 +230,14 @@
 
           <!-- Route Pin Placement Selector Controls -->
           <div class="route-pin-selector-bar">
-            <button class="pin-mode-btn active" id="btn-mode-dest" data-mode="dest">
-              🏁 Tocar Mapa para Destino
+            <button class="pin-mode-btn active" id="btn-mode-dest" data-mode="dest" title="Tocar mapa para fijar destino">
+              <span>🏁</span> <span class="pin-text-full">Tocar Mapa Destino</span><span class="pin-text-short">Destino</span>
             </button>
-            <button class="pin-mode-btn" id="btn-mode-orig" data-mode="orig">
-              📍 Mover Mi Origen
+            <button class="pin-mode-btn" id="btn-mode-orig" data-mode="orig" title="Mover punto de origen">
+              <span>📍</span> <span class="pin-text-full">Mover Mi Origen</span><span class="pin-text-short">Origen</span>
             </button>
             <button class="pin-mode-btn btn-gps-reset" id="btn-reset-gps-orig" title="Restablecer Origen a mi GPS actual">
-              🎯 Mi GPS
+              <span>🎯</span> <span>Mi GPS</span>
             </button>
           </div>
 
@@ -323,6 +365,90 @@
 
         </section>
 
+        <!-- ====================================================================
+             TAB 5: COMUNICADOR VECINAL, RADIO TÁCTICO & PANEL DE CONTACTOS
+             ==================================================================== -->
+        <section class="tab-panel" id="tab-chat" aria-label="Comunicador Vecinal y Radio Táctico">
+          <div class="chat-module-container">
+            <!-- Header with Active Context Info -->
+            <div class="chat-header-bar">
+              <div class="chat-active-title">
+                <span class="chat-active-icon" id="citizen-chat-icon">💬</span>
+                <div>
+                  <h3 id="citizen-chat-title">Canal General de la Colmena</h3>
+                  <p id="citizen-chat-subtitle">Comunidad vecinal abierta y coordinación ciudadana</p>
+                </div>
+              </div>
+              <button class="chat-toggle-contacts-btn" id="btn-toggle-contacts-view">
+                👥 Contactos (<span id="chat-contacts-count">4</span>)
+              </button>
+            </div>
+
+            <!-- Channels Selector Strip -->
+            <div class="chat-channels-bar" role="tablist">
+              <button class="chat-channel-btn active" data-channel="general">
+                <span>💬</span> General
+              </button>
+              <button class="chat-channel-btn channel-urgent" data-channel="emergencias">
+                <span>🚨</span> Emergencias SOS
+              </button>
+              <button class="chat-channel-btn channel-patrol" data-channel="cuadrante">
+                <span>🚓</span> Enlace Cuadrante
+              </button>
+            </div>
+
+            <!-- Contacts Directory Drawer / Panel (Segmented by Roles) -->
+            <div class="chat-contacts-drawer hidden" id="chat-contacts-drawer">
+              <div class="contacts-drawer-header">
+                <h4>👥 Directorio de Contactos Colmena</h4>
+                <button class="btn-close-contacts" id="btn-close-contacts" aria-label="Cerrar contactos">✕</button>
+              </div>
+              <!-- Role Segmenter Chips -->
+              <div class="chat-role-filters" role="group" aria-label="Filtro de contactos por rol">
+                <button class="role-filter-chip active" data-role="ALL">Todos</button>
+                <button class="role-filter-chip" data-role="citizen">👤 Ciudadanos</button>
+                <button class="role-filter-chip" data-role="patrol">🚓 Patrullas</button>
+                <button class="role-filter-chip" data-role="admin">🛡️ Admins</button>
+              </div>
+              <div class="contacts-list-scroll" id="citizen-contacts-list">
+                <!-- Rendered dynamically by bundle.js -->
+              </div>
+            </div>
+
+            <!-- Messages Stream -->
+            <div class="chat-messages-viewport" id="citizen-chat-messages">
+              <!-- Rendered dynamically by bundle.js -->
+            </div>
+
+            <!-- Chat Message Composer -->
+            <form class="chat-composer-form" id="citizen-chat-form" onsubmit="return false;">
+              <!-- Priority Selector -->
+              <div class="chat-priority-bar">
+                <span class="priority-label">Prioridad:</span>
+                <label class="priority-chip priority-normal active">
+                  <input type="radio" name="chat-priority" value="NORMAL" checked>
+                  <span>💬 Normal</span>
+                </label>
+                <label class="priority-chip priority-warning">
+                  <input type="radio" name="chat-priority" value="WARNING">
+                  <span>⚠️ Precaución</span>
+                </label>
+                <label class="priority-chip priority-emergency">
+                  <input type="radio" name="chat-priority" value="EMERGENCY">
+                  <span>🚨 Emergencia</span>
+                </label>
+              </div>
+
+              <div class="chat-input-row">
+                <input type="text" id="citizen-chat-input" class="tactical-input chat-input-field" placeholder="Escribe un mensaje para los vecinos y patrullas..." maxlength="300" required autocomplete="off">
+                <button type="submit" class="btn-chat-send" id="btn-citizen-chat-send" title="Enviar mensaje">
+                  <span>Enviar</span> ➔
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+
       </aside>
 
       <!-- Right Tactical Map Canvas (Always Visible on PC / Expanded on Mobile) -->
@@ -373,6 +499,11 @@
       <button class="nav-tab-item" data-tab="profile" id="nav-btn-profile">
         <span class="nav-icon">🐝</span>
         <span>Colmena</span>
+      </button>
+
+      <button class="nav-tab-item" data-tab="chat" id="nav-btn-chat">
+        <span class="nav-icon">💬</span>
+        <span>Chat</span>
       </button>
     </nav>
 
@@ -490,6 +621,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="js/firebase-config.js"></script>
   <script src="js/firebaseAuth.js"></script>
+  <script src="js/chatService.js"></script>
 
   <!-- Universal Self-Contained Bundle -->
   <script src="js/bundle.js"></script>

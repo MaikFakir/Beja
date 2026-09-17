@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Antigravity agent runs & temporary artifacts
+.agents/
+*.log
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE configurations
+.vscode/
+.idea/

@@ -56,18 +56,24 @@
       <!-- Dashboard View Switcher -->
       <div class="admin-view-switcher" role="group" aria-label="Cambiar vista">
         <button class="tactical-btn active" id="btn-view-radar">🚨 Radar & Despacho</button>
-        <button class="tactical-btn" id="btn-view-users">👥 Directorio Usuarios</button>
+        <button class="tactical-btn" id="btn-view-broadcasts">📢 Avisos de Zona</button>
+        <button class="tactical-btn" id="btn-view-users">👥 Usuarios</button>
+        <button class="tactical-btn" id="btn-view-chat">💬 Radio & Chat Táctico</button>
       </div>
 
+      <button class="tactical-btn" id="btn-open-bulk-modal" style="background: rgba(139, 92, 246, 0.22); border-color: var(--color-accent); color: #c4b5fd;">
+        ⚡ Inyector Masivo
+      </button>
       <button class="tactical-btn" id="btn-toggle-sound">
         🔊 Audio
       </button>
       <button class="tactical-btn btn-broadcast-open" id="btn-open-broadcast">
-        📢 Alerta
+        📢 Nuevo Aviso
       </button>
       <a href="index.html" target="_blank" class="tactical-btn btn-citizen-app-link" title="Abrir App Ciudadana">
         📱 App
       </a>
+      <div id="admin-user-header-pill" class="admin-user-header-pill"></div>
     </div>
   </header>
 
@@ -102,6 +108,14 @@
         <span style="font-size: 0.72rem; color: var(--color-safe); font-family: var(--font-mono);">● EN VIVO</span>
       </div>
 
+      <!-- Segmentador de Estado / Prioridad de Despacho -->
+      <div class="admin-status-segmented-control" id="queue-status-filter-tabs" role="tablist" aria-label="Filtrar incidentes por estado">
+        <button class="status-segment-btn active" data-status-filter="ACTIVE_CRITICAL">🚨 Activas / Críticas</button>
+        <button class="status-segment-btn" data-status-filter="PATROL_ATTENDED">🚓 Patrulladas (Azul)</button>
+        <button class="status-segment-btn" data-status-filter="PROBING">🟡 Sondeo</button>
+        <button class="status-segment-btn" data-status-filter="ALL">📋 Todas</button>
+      </div>
+
       <div class="live-incident-feed" id="admin-incident-queue">
         <!-- Injected dynamically by admin-bundle.js -->
       </div>
@@ -132,9 +146,136 @@
         </div>
       </div>
 
+      <!-- Filtro de Roles para Gestión y Moderación de Usuarios -->
+      <div class="users-role-filters-bar" role="group" aria-label="Filtro de usuarios por rol">
+        <button class="role-filter-tab active" data-user-role="ALL">Todos (<span id="user-count-all">0</span>)</button>
+        <button class="role-filter-tab" data-user-role="citizen">👤 Ciudadanos (<span id="user-count-citizen">0</span>)</button>
+        <button class="role-filter-tab" data-user-role="patrol">🚓 Patrulleros (<span id="user-count-patrol">0</span>)</button>
+        <button class="role-filter-tab" data-user-role="admin">🛡️ Administradores (<span id="user-count-admin">0</span>)</button>
+      </div>
+
       <div class="users-directory-grid" id="admin-users-grid">
         <!-- Populated by admin-bundle.js -->
       </div>
+    </section>
+
+    <!-- VIEW 3: Zone Broadcasts Management Panel -->
+    <section class="admin-broadcasts-panel hidden" id="admin-broadcasts-panel" style="padding: 20px; overflow-y: auto; height: 100%;">
+      <div class="users-panel-header" style="margin-bottom: 16px;">
+        <div class="users-header-info">
+          <h3>📢 GESTIÓN DE AVISOS Y ALERTAS POR ZONA</h3>
+          <p>Configura avisos geolocalizados. Solo sonarán en celulares dentro del radio asignado (&le; 50m, 100m, etc.). Puedes activarlos o inhabilitarlos.</p>
+        </div>
+        <button class="tactical-btn btn-broadcast-open" id="btn-create-zone-broadcast">
+          ➕ Crear Aviso de Zona
+        </button>
+      </div>
+
+      <div class="broadcasts-table-container" style="background: var(--bg-card); border-radius: var(--radius-md); border: 1px solid var(--border-glass); overflow: hidden;">
+        <div id="admin-broadcasts-list" style="display: flex; flex-direction: column; gap: 10px; padding: 16px;">
+          <!-- Populated dynamically by admin-bundle.js -->
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 4: Tactical Comms & Multi-Role Radio Station -->
+    <section class="admin-chat-panel hidden" id="admin-chat-panel">
+      <!-- Left: Contact Directory & Channels Drawer -->
+      <aside class="admin-chat-sidebar">
+        <div class="chat-sidebar-header">
+          <h4>📻 ESTACIÓN DE COMUNICACIONES TÁCTICAS</h4>
+          <p>Red de coordinación enjambre para cuadrantes, patrullas y ciudadanos.</p>
+        </div>
+
+        <div class="admin-chat-channels-list">
+          <span class="chat-group-label">CANALES OFICIALES</span>
+          <button class="admin-chat-channel-item active" data-channel="general">
+            <span class="chan-icon">💬</span>
+            <div class="chan-meta">
+              <strong>#general-vecinal</strong>
+              <small>Comunidad abierta & alertas ciudadanas</small>
+            </div>
+          </button>
+          <button class="admin-chat-channel-item urgent-channel" data-channel="emergencias">
+            <span class="chan-icon">🚨</span>
+            <div class="chan-meta">
+              <strong>#emergencias-sos</strong>
+              <small>Prioridad alta & despachos en progreso</small>
+            </div>
+          </button>
+          <button class="admin-chat-channel-item patrol-channel" data-channel="cuadrante">
+            <span class="chan-icon">🚓</span>
+            <div class="chan-meta">
+              <strong>#cuadrante-operativo</strong>
+              <small>Coordinación interna de patrullas policiales</small>
+            </div>
+          </button>
+        </div>
+
+        <div class="admin-chat-contacts-section">
+          <div class="contacts-header-flex">
+            <span class="chat-group-label">DIRECTORIO POR ROLES</span>
+          </div>
+
+          <!-- Role Filter Chips in Admin Chat -->
+          <div class="admin-chat-role-chips" role="group" aria-label="Filtrar contactos por rol">
+            <button class="chat-role-chip active" data-chat-role="ALL">Todos</button>
+            <button class="chat-role-chip" data-chat-role="citizen">👤 Ciudadanos</button>
+            <button class="chat-role-chip" data-chat-role="patrol">🚓 Patrullas</button>
+            <button class="chat-role-chip" data-chat-role="admin">🛡️ Admins</button>
+          </div>
+
+          <div class="admin-contacts-list-scroll" id="admin-chat-contacts-list">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right: Main Chat Feed & Command Composer -->
+      <section class="admin-chat-main">
+        <div class="admin-chat-top-header">
+          <div class="active-chat-info">
+            <span class="active-chat-icon" id="admin-chat-active-icon">💬</span>
+            <div>
+              <h3 id="admin-chat-active-title">Canal #general-vecinal</h3>
+              <p id="admin-chat-active-desc">Transmisión bidireccional entre la central de mando, patrulleros y vecinos.</p>
+            </div>
+          </div>
+          <div class="chat-station-telemetry">
+            <span class="status-live-indicator">● TRANSMISIÓN CIFRADA</span>
+          </div>
+        </div>
+
+        <div class="admin-chat-messages-container" id="admin-chat-messages-feed">
+          <!-- Populated dynamically -->
+        </div>
+
+        <!-- Admin Message Dispatch Composer -->
+        <form class="admin-chat-composer" id="admin-chat-form" onsubmit="return false;">
+          <div class="admin-chat-priority-selector">
+            <span class="p-label">Nivel de Alerta:</span>
+            <label class="admin-priority-pill p-normal active">
+              <input type="radio" name="admin-priority" value="NORMAL" checked>
+              <span>💬 Normal (Informativo)</span>
+            </label>
+            <label class="admin-priority-pill p-warning">
+              <input type="radio" name="admin-priority" value="WARNING">
+              <span>⚠️ Precaución (Aviso)</span>
+            </label>
+            <label class="admin-priority-pill p-emergency">
+              <input type="radio" name="admin-priority" value="EMERGENCY">
+              <span>🚨 Emergencia (Prioridad Táctica)</span>
+            </label>
+          </div>
+
+          <div class="admin-composer-row">
+            <input type="text" id="admin-chat-input" class="tactical-input admin-chat-field" placeholder="Escribir directiva de despacho o mensaje a la red..." autocomplete="off">
+            <button type="submit" class="tactical-btn btn-send-admin-chat" id="btn-send-admin-chat">
+              📢 Emitir Mensaje ➔
+            </button>
+          </div>
+        </form>
+      </section>
     </section>
 
   </main>
@@ -144,29 +285,154 @@
     📋 Ver Cola
   </button>
 
-  <!-- Tactical Emergency Broadcast Modal -->
+  <!-- Tactical Emergency Broadcast Modal with Zone Radius (<50m, etc.) -->
   <div class="admin-modal-backdrop hidden" id="admin-broadcast-modal" role="dialog" aria-modal="true">
     <div class="admin-modal-card">
       <div class="modal-header">
-        <h3>📢 EMITIR ALERTA COMUNITARIA MASIVA</h3>
-        <p>Este mensaje se enviará con sirena de emergencia a todos los celulares en el radio metropolitano seleccionado.</p>
+        <h3>📢 EMITIR AVISO DE SEGURIDAD POR ZONA</h3>
+        <p>Solo alertará a ciudadanos ubicados dentro del radio geográfico seleccionado.</p>
       </div>
 
       <div class="modal-body">
         <div>
           <label class="tray-label" for="broadcast-title-input">Título de la Alerta Oficial</label>
-          <input type="text" id="broadcast-title-input" class="tactical-input" value="AVISO DE SEGURIDAD PÚBLICA: EVITAR ZONA CENTRO">
+          <input type="text" id="broadcast-title-input" class="tactical-input" value="AVISO DE SEGURIDAD: EVITAR INTERSECCIÓN">
         </div>
 
         <div>
           <label class="tray-label" for="broadcast-message-input">Instrucciones a la Ciudadanía</label>
-          <textarea id="broadcast-message-input" class="tactical-input" rows="3" placeholder="Ejemplo: Se reporta incidente en progreso. Por favor busque rutas alternativas y permanezca en lugares seguros.">Operativo policial activo en el cuadrante. Por favor evite transitar por la intersección principal y use rutas alternas seguras.</textarea>
+          <textarea id="broadcast-message-input" class="tactical-input" rows="3" placeholder="Mensaje para los ciudadanos...">Operativo activo en el cuadrante. Favor transitar con precaución y tomar desvíos seguros.</textarea>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div>
+            <label class="tray-label" for="broadcast-radius-select">Radio de Notificación</label>
+            <select id="broadcast-radius-select" class="tactical-input" style="background:#0e1726; color:#fff;">
+              <option value="50" selected>📍 50 Metros (Estricto)</option>
+              <option value="100">📍 100 Metros</option>
+              <option value="300">📍 300 Metros (Cuadrante)</option>
+              <option value="1000">📍 1 Kilómetro</option>
+              <option value="5000">🌐 Todo el Sector (5 km)</option>
+            </select>
+          </div>
+          <div>
+            <label class="tray-label" for="broadcast-status-select">Estado Inicial</label>
+            <select id="broadcast-status-select" class="tactical-input" style="background:#0e1726; color:#fff;">
+              <option value="active" selected>🟢 Activo (Alerta)</option>
+              <option value="inactive">⚪ Inactivo / Borrador</option>
+            </select>
+          </div>
         </div>
       </div>
 
       <div class="modal-actions">
         <button class="tactical-btn" id="btn-close-broadcast">Cancelar</button>
-        <button class="tactical-btn btn-broadcast-open" id="btn-send-broadcast">🚀 Despachar Alerta</button>
+        <button class="tactical-btn btn-broadcast-open" id="btn-send-broadcast">🚀 Despachar Aviso</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tactical Bulk Alert Generator Modal (Inyector Masivo) -->
+  <div class="admin-modal-backdrop hidden" id="admin-bulk-modal" role="dialog" aria-modal="true">
+    <div class="admin-modal-card">
+      <div class="modal-header">
+        <h3>⚡ INYECTOR MASIVO DE ALERTAS Y MAPEO</h3>
+        <p>Genera múltiples incidentes simultáneos para pruebas de estrés, calibración de rutas o mapeo zonal.</p>
+      </div>
+
+      <div class="modal-body">
+        <div>
+          <label class="tray-label" for="bulk-category-select">Categoría de Eventos</label>
+          <select id="bulk-category-select" class="tactical-input" style="background:#0e1726; color:#fff;">
+            <option value="MIXED" selected>🎲 Aleatorias / Mixtas</option>
+            <option value="FIGHT">⚔️ Riña / Pelea</option>
+            <option value="ROBBERY">🚨 Robo / Asalto</option>
+            <option value="MEDICAL">🚑 Emergencia Médica</option>
+            <option value="ACCIDENT">🚗 Accidente Vial</option>
+            <option value="SUSPICIOUS">👁️ Actividad Sospechosa</option>
+          </select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div>
+            <label class="tray-label" for="bulk-count-select">Cantidad de Alertas</label>
+            <select id="bulk-count-select" class="tactical-input" style="background:#0e1726; color:#fff;">
+              <option value="3">3 Alertas</option>
+              <option value="5" selected>5 Alertas</option>
+              <option value="10">10 Alertas</option>
+              <option value="20">20 Alertas</option>
+              <option value="50">50 Alertas (Densidad Alta)</option>
+            </select>
+          </div>
+          <div>
+            <label class="tray-label" for="bulk-radius-select">Radio de Dispersión</label>
+            <select id="bulk-radius-select" class="tactical-input" style="background:#0e1726; color:#fff;">
+              <option value="200">200 Metros</option>
+              <option value="500" selected>500 Metros</option>
+              <option value="1000">1 Kilómetro</option>
+              <option value="2500">2.5 Kilómetros</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="tray-label" for="bulk-type-select">Nivel de Consenso Inicial</label>
+          <select id="bulk-type-select" class="tactical-input" style="background:#0e1726; color:#fff;">
+            <option value="PROBING">🟡 Sondeo (1 reporte inicial)</option>
+            <option value="CRITICAL_SWARM" selected>🚨 Enjambre Crítico (2+ confirmaciones inmediatas)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="tactical-btn" id="btn-close-bulk">Cancelar</button>
+        <button class="tactical-btn btn-sim-pill" id="btn-execute-bulk" style="background: var(--color-accent); color:#fff;">
+          🚀 Inyectar Alertas
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Moderation & Reputation Action Modal -->
+  <div class="admin-modal-backdrop hidden" id="admin-user-action-modal" role="dialog" aria-modal="true">
+    <div class="admin-modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3 id="user-modal-title">⚙️ MODERACIÓN Y CONTROL DE USUARIO</h3>
+        <p id="user-modal-subtitle">Gestiona suspensión temporal, reputación y rol en la Colmena.</p>
+      </div>
+
+      <div class="modal-body" id="user-modal-body">
+        <!-- Injected dynamically based on selected user -->
+      </div>
+
+      <div class="modal-actions">
+        <button class="tactical-btn" id="btn-close-user-modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Authority & Admin Access Gate Overlay (Restricts non-admins) -->
+  <div class="admin-modal-backdrop hidden" id="admin-access-gate-modal" role="dialog" aria-modal="true" style="z-index: 99998; backdrop-filter: blur(16px); background: rgba(5, 8, 18, 0.94);">
+    <div class="admin-modal-card" style="max-width: 480px; text-align: center; border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 0 50px rgba(239, 68, 68, 0.2);">
+      <div style="font-size: 3rem; margin-bottom: 12px; filter: drop-shadow(0 0 16px rgba(239, 68, 68, 0.6));">🛡️</div>
+      <h2 style="color: #fff; font-size: 1.25rem; font-weight: 800; margin-bottom: 8px;">C2 DESPACHO CENTRAL • ACCESO RESTRINGIDO</h2>
+      <p style="color: #94a3b8; font-size: 0.85rem; line-height: 1.5; margin-bottom: 20px;">
+        Este centro de control táctico está reservado exclusivamente para <strong>Autoridades Policiales, Cuadrantes y Administradores</strong> (ej: <span style="color:#00d2ff; font-family:var(--font-mono);">Gabyolarte2017@gmail.com</span>).
+      </p>
+      <div style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 14px; margin-bottom: 20px; font-size: 0.8rem; color: #cbd5e1; text-align: left;">
+        <div style="margin-bottom: 6px;">🔒 <strong>Requisitos de acceso:</strong></div>
+        <div style="margin-left: 10px; line-height: 1.6;">
+          • Cuenta de Administrador Principal o Patrullero autorizada.<br>
+          • Los ciudadanos e invitados deben navegar desde la App Comunitaria.
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <button class="tactical-btn" id="btn-gate-login-authority" style="background: linear-gradient(135deg, #ef4444, #b91c1c); color: #fff; padding: 12px; font-weight: 700; font-size: 0.92rem; border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);">
+          🔑 Iniciar Sesión como Autoridad / Admin
+        </button>
+        <a href="index.html" class="tactical-btn" id="btn-gate-citizen-return" style="text-align: center; text-decoration: none; padding: 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); color: #94a3b8; font-size: 0.85rem;">
+          📱 Volver a la App Ciudadana
+        </a>
       </div>
     </div>
   </div>
@@ -177,6 +443,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="js/firebase-config.js"></script>
   <script src="js/firebaseAuth.js"></script>
+  <script src="js/chatService.js"></script>
 
   <!-- Universal Admin Bundle Script -->
   <script src="js/admin-bundle.js"></script>

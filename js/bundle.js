@@ -59,12 +59,38 @@
     }
 
     async resolveIpLocation() {
+      // 1. Primary: ipapi.co
       try {
         const res = await fetch('https://ipapi.co/json/');
         if (res.ok) {
           const data = await res.json();
           if (data.latitude && data.longitude) {
             this.setCoords(data.latitude, data.longitude, false);
+            return;
+          }
+        }
+      } catch (e) {}
+
+      // 2. Secondary fallback: ip-api.com
+      try {
+        const res = await fetch('https://ip-api.com/json/?fields=status,lat,lon');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'success' && data.lat && data.lon) {
+            this.setCoords(data.lat, data.lon, false);
+            return;
+          }
+        }
+      } catch (e) {}
+
+      // 3. Tertiary fallback: ipwhois.app
+      try {
+        const res = await fetch('https://ipwhois.app/json/');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.latitude && data.longitude) {
+            this.setCoords(data.latitude, data.longitude, false);
+            return;
           }
         }
       } catch (e) {}
@@ -335,6 +361,7 @@
     PROBING: 'PROBING',
     CRITICAL_SWARM: 'CRITICAL_SWARM',
     DISPATCHED: 'DISPATCHED',
+    PATROL_ATTENDED: 'PATROL_ATTENDED',
     RESOLVED: 'RESOLVED',
     FALSE_ALARM: 'FALSE_ALARM'
   };
@@ -343,7 +370,9 @@
     FIGHT: { id: 'FIGHT', name: 'Riña / Pelea', icon: '⚔️' },
     ROBBERY: { id: 'ROBBERY', name: 'Robo / Asalto', icon: '🚨' },
     MEDICAL: { id: 'MEDICAL', name: 'Emergencia Médica', icon: '🚑' },
-    SUSPICIOUS: { id: 'SUSPICIOUS', name: 'Actividad Sospechosa', icon: '👁️' }
+    SUSPICIOUS: { id: 'SUSPICIOUS', name: 'Actividad Sospechosa', icon: '👁️' },
+    ACCIDENT: { id: 'ACCIDENT', name: 'Accidente de Tránsito', icon: '💥' },
+    VANDALISM: { id: 'VANDALISM', name: 'Vandalismo / Daño', icon: '🔨' }
   };
 
   class SwarmEngine {
@@ -440,32 +469,104 @@
       return { incident: resultIncident, isEscalated };
     }
 
-    validateIncidentAsWitness(incidentId) {
+    voteIncidentVerdict(incidentId, isReal, userCoords = null) {
       const myId = syncBus.getSenderId();
       this.incidents = this.loadIncidents();
       const inc = this.incidents.find(i => i.id === incidentId);
-      if (!inc) return false;
+      if (!inc) return { success: false, reason: 'NOT_FOUND' };
 
-      const alreadyVoted = inc.reporters.some(r => r.userId === myId);
-      if (alreadyVoted) return false;
+      if (!inc.reporters) inc.reporters = [];
+      if (!inc.refutations) inc.refutations = [];
 
-      inc.reporters.push({ userId: myId, timestamp: Date.now(), note: 'Confirmado por testigo vecino.' });
-      inc.reportCount = inc.reporters.length;
-
-      let isEscalated = false;
-      if (inc.reportCount >= 2 && inc.status === INCIDENT_STATES.PROBING) {
-        inc.status = INCIDENT_STATES.CRITICAL_SWARM;
-        isEscalated = true;
+      // Check if user already participated
+      const alreadyReported = inc.reporters.some(r => r.userId === myId);
+      const alreadyRefuted = inc.refutations.some(r => r.userId === myId);
+      if (alreadyReported || alreadyRefuted) {
+        return { success: false, reason: 'ALREADY_VOTED' };
       }
 
+      // Check distance: strictly within CLUSTER_RADIUS_METERS (50m) on the same street
+      if (userCoords && userCoords.lat && userCoords.lng && inc.lat && inc.lng) {
+        const dist = Math.round(this.calculateDistanceMeters(userCoords.lat, userCoords.lng, inc.lat, inc.lng));
+        if (dist > this.CLUSTER_RADIUS_METERS) {
+          return { success: false, reason: 'TOO_FAR', distance: dist };
+        }
+      }
+
+      if (isReal) {
+        inc.reporters.push({
+          userId: myId,
+          timestamp: Date.now(),
+          verdict: 'REAL',
+          note: 'Confirmado como REAL por testigo presencial en la calle.'
+        });
+        inc.reportCount = inc.reporters.length;
+
+        let isEscalated = false;
+        if (inc.reportCount >= 2 && inc.status === INCIDENT_STATES.PROBING) {
+          inc.status = INCIDENT_STATES.CRITICAL_SWARM;
+          isEscalated = true;
+        }
+
+        this.saveIncidents();
+        trustEngine.recordValidationGiven(); // +5 pts to witness
+
+        syncBus.emit('INCIDENT_MUTATION', { incident: inc, isEscalated });
+        if (isEscalated) {
+          syncBus.emit('SWARM_ESCALATED_CRITICAL', { incident: inc });
+        }
+        return { success: true, verdict: 'REAL', isEscalated, incident: inc };
+      } else {
+        inc.refutations.push({
+          userId: myId,
+          timestamp: Date.now(),
+          verdict: 'FALSE',
+          note: 'Desmentido como FALSO por testigo presencial en la calle.'
+        });
+
+        // Award honest witness +5 pts for civic verification
+        trustEngine.awardPoints(5, 'Testimonio cívico: Desmentiste una alerta falsa en tu calle');
+
+        // If 2 or more witnesses refute the alert, dismiss it as FALSE_ALARM
+        let isDismissed = false;
+        if (inc.refutations.length >= 2) {
+          this.incidents = this.incidents.filter(i => i.id !== incidentId);
+          this.saveIncidents();
+          syncBus.emit('INCIDENT_MUTATION', { incidentId, status: INCIDENT_STATES.FALSE_ALARM, isDismissed: true });
+          syncBus.emit('INCIDENT_DISMISSED_FALSE', { incidentId, category: inc.category });
+          isDismissed = true;
+          return { success: true, verdict: 'FALSE', isDismissed, incident: inc };
+        }
+
+        this.saveIncidents();
+        syncBus.emit('INCIDENT_MUTATION', { incident: inc });
+        return { success: true, verdict: 'FALSE', isDismissed: false, incident: inc };
+      }
+    }
+
+    validateIncidentAsWitness(incidentId, userCoords = null) {
+      const res = this.voteIncidentVerdict(incidentId, true, userCoords);
+      return res.success;
+    }
+
+    patrolIncident(incidentId, unitData = { code: 'PATRULLA-CUADRANTE', etaMinutes: 0 }) {
+      this.incidents = this.loadIncidents();
+      const incident = this.incidents.find(i => i.id === incidentId);
+      if (!incident) return;
+      incident.status = INCIDENT_STATES.PATROL_ATTENDED;
+      incident.patrolAttendedAt = Date.now();
+      incident.attendedBy = unitData;
+      this.history.push({
+        lat: incident.lat,
+        lng: incident.lng,
+        category: incident.category,
+        weight: 0.35, // Soft calm weight: preserves hotzone without loud alarm
+        timestamp: Date.now(),
+        timeOfDay: new Date().getHours() >= 19 || new Date().getHours() <= 5 ? 'NIGHT' : 'DAY'
+      });
+      this.saveHistory();
       this.saveIncidents();
-      trustEngine.recordValidationGiven();
-
-      syncBus.emit('INCIDENT_MUTATION', { incident: inc, isEscalated });
-      if (isEscalated) {
-        syncBus.emit('SWARM_ESCALATED_CRITICAL', { incident: inc });
-      }
-      return true;
+      syncBus.emit('INCIDENT_MUTATION', { incident, status: INCIDENT_STATES.PATROL_ATTENDED });
     }
 
     dispatchUnit(incidentId, unitData = { code: 'PATRULLA-07', etaMinutes: 3 }) {
@@ -484,6 +585,7 @@
       this.incidents = this.loadIncidents();
       const incident = this.incidents.find(i => i.id === incidentId);
       if (!incident) return;
+      this.recordDismissedId(incidentId);
       this.incidents = this.incidents.filter(i => i.id !== incidentId);
       this.saveIncidents();
       syncBus.emit('INCIDENT_MUTATION', { incidentId, status: INCIDENT_STATES.RESOLVED });
@@ -494,10 +596,70 @@
       this.incidents = this.loadIncidents();
       const incident = this.incidents.find(i => i.id === incidentId);
       if (!incident) return;
+      this.recordDismissedId(incidentId);
       this.incidents = this.incidents.filter(i => i.id !== incidentId);
       this.saveIncidents();
       syncBus.emit('INCIDENT_MUTATION', { incidentId, status: INCIDENT_STATES.FALSE_ALARM });
       trustEngine.awardPoints(-15, 'Penalización: Reporte descartado como falsa alarma');
+    }
+
+    recordDismissedId(id) {
+      try {
+        const raw = localStorage.getItem('colmena_dismissed_incident_ids_v2');
+        const set = raw ? JSON.parse(raw) : [];
+        if (!set.includes(id)) {
+          set.push(id);
+          localStorage.setItem('colmena_dismissed_incident_ids_v2', JSON.stringify(set));
+        }
+      } catch (e) {}
+    }
+
+    getDismissedIds() {
+      try {
+        const raw = localStorage.getItem('colmena_dismissed_incident_ids_v2');
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    cleanupExpiredIncidents() {
+      const now = Date.now();
+      const active = [];
+      let changed = false;
+      const dismissed = this.getDismissedIds();
+
+      this.incidents.forEach(inc => {
+        if (dismissed.includes(inc.id) || inc.status === INCIDENT_STATES.RESOLVED || inc.status === INCIDENT_STATES.FALSE_ALARM) {
+          changed = true;
+          return;
+        }
+        const ageMs = now - (inc.updatedAt || inc.createdAt);
+        // Probing dissolves after 10 minutes
+        if (inc.status === INCIDENT_STATES.PROBING && ageMs > 10 * 60 * 1000) {
+          changed = true;
+          this.recordDismissedId(inc.id);
+          return;
+        }
+        // Critical auto-archives after 30 minutes
+        if ((inc.status === INCIDENT_STATES.CRITICAL_SWARM || inc.status === INCIDENT_STATES.DISPATCHED) && ageMs > 30 * 60 * 1000) {
+          changed = true;
+          this.recordDismissedId(inc.id);
+          return;
+        }
+        // Patrol attended archives after 20 minutes
+        if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > 20 * 60 * 1000) {
+          changed = true;
+          this.recordDismissedId(inc.id);
+          return;
+        }
+        active.push(inc);
+      });
+
+      if (changed) {
+        this.incidents = active;
+        this.saveIncidents();
+      }
     }
 
     sendBroadcastAlert({ title, message }) {
@@ -509,7 +671,10 @@
     loadIncidents() {
       try {
         const raw = localStorage.getItem(this.STORAGE_KEY_INCIDENTS);
-        return raw ? JSON.parse(raw) : [];
+        let list = raw ? JSON.parse(raw) : [];
+        const dismissed = this.getDismissedIds();
+        list = list.filter(i => !dismissed.includes(i.id) && i.status !== INCIDENT_STATES.RESOLVED && i.status !== INCIDENT_STATES.FALSE_ALARM);
+        return list;
       } catch (e) { return []; }
     }
 
@@ -576,10 +741,15 @@
           attributionControl: false
         });
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-          maxZoom: 19,
-          subdomains: 'abcd'
-        }).addTo(this.map);
+        // 100% Free CartoDB Dark Matter Tile Layer (Zero API Key Required - Sleek Cyberpunk Dark Theme)
+        const freeTileLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+          subdomains: 'abcd',
+          maxZoom: 20,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+          className: 'colmena-dark-tiles',
+          errorTileUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+        });
+        freeTileLayer.addTo(this.map);
 
         L.control.zoom({ position: 'bottomright' }).addTo(this.map);
 
@@ -727,23 +897,25 @@
       incidents.forEach(inc => {
         const isCritical = inc.status === INCIDENT_STATES.CRITICAL_SWARM;
         const isDispatched = inc.status === INCIDENT_STATES.DISPATCHED;
+        const isPatrolAttended = inc.status === INCIDENT_STATES.PATROL_ATTENDED;
         const cat = INCIDENT_CATEGORIES[inc.category] || INCIDENT_CATEGORIES.FIGHT;
 
         // 50m exact swarm cluster circle
         L.circle([inc.lat, inc.lng], {
           radius: 50,
-          color: isCritical ? '#ff2a55' : (isDispatched ? '#00d2ff' : '#ffb800'),
+          color: isCritical ? '#ff2a55' : (isPatrolAttended ? '#00b0ff' : (isDispatched ? '#00d2ff' : '#ffb800')),
           weight: 2,
-          fillColor: isCritical ? '#ff2a55' : (isDispatched ? '#00d2ff' : '#ffb800'),
-          fillOpacity: isCritical ? 0.3 : 0.15,
+          fillColor: isCritical ? '#ff2a55' : (isPatrolAttended ? '#00b0ff' : (isDispatched ? '#00d2ff' : '#ffb800')),
+          fillOpacity: isCritical ? 0.3 : (isPatrolAttended ? 0.12 : 0.15),
           dashArray: isCritical ? null : '4, 6'
         }).addTo(this.markerLayerGroup);
 
+        // ONLY critical alert has pulsating wave! Probing and patrol-attended do NOT pulsate.
         const markerHtml = `
-          <div class="incident-custom-marker ${isCritical ? 'critical' : (isDispatched ? 'dispatched' : 'probing')}">
-            <div class="marker-radar-wave"></div>
+          <div class="incident-custom-marker ${isCritical ? 'critical' : (isPatrolAttended ? 'patrol-attended' : (isDispatched ? 'dispatched' : 'probing'))}">
+            ${isCritical ? '<div class="marker-radar-wave"></div>' : ''}
             <div class="marker-core">
-              <span class="marker-icon">${cat.icon}</span>
+              <span class="marker-icon">${isPatrolAttended ? '🚓' : cat.icon}</span>
               <span class="marker-count">${inc.reportCount}</span>
             </div>
           </div>
@@ -754,18 +926,30 @@
         marker.bindPopup(`
           <div class="tactical-popup">
             <div class="popup-header">
-              <span class="popup-category">${cat.icon} ${cat.name}</span>
-              <span class="popup-badge ${isCritical ? 'badge-critical' : 'badge-warning'}">
-                ${isCritical ? '🚨 ALERTA CRÍTICA' : (isDispatched ? '🚔 Patrulla en camino' : '🟡 Sondeo')}
+              <span class="popup-category">${isPatrolAttended ? '🚓 Cuadrante en Sitio' : `${cat.icon} ${cat.name}`}</span>
+              <span class="popup-badge ${isCritical ? 'badge-critical' : (isPatrolAttended ? 'badge-patrol-attended' : 'badge-warning')}">
+                ${isCritical ? '🚨 ALERTA CRÍTICA' : (isPatrolAttended ? '🚓 Asegurado por Patrulla' : (isDispatched ? '🚔 Patrulla en camino' : '🟡 Sondeo'))}
               </span>
             </div>
             <div class="popup-body">
-              <p>👥 <strong>${inc.reportCount} ciudadano(s)</strong> en el enjambre de 50m.</p>
-              <p style="color:var(--text-muted);font-size:0.7rem;">📍 Coordenadas: ${inc.lat.toFixed(4)}, ${inc.lng.toFixed(4)}</p>
+              <p>👥 <strong>${inc.reportCount} confirmación(es)</strong>${(inc.refutations && inc.refutations.length) ? ` &bull; ⚠️ ${inc.refutations.length} desmentidos` : ''}</p>
+              <p style="color:var(--text-muted);font-size:0.7rem;">📍 A ${Math.round(swarmEngine.calculateDistanceMeters(this.userLocation.lat, this.userLocation.lng, inc.lat, inc.lng))}m de tu ubicación</p>
               ${inc.reporters[0]?.note ? `<p style="font-style:italic;margin-top:4px;color:#fff;">"${inc.reporters[0].note}"</p>` : ''}
-              <button class="btn-popup-witness" onclick="if(window.citizenApp) window.citizenApp.voteWitness('${inc.id}')" style="margin-top:8px; width:100%; background:linear-gradient(135deg,#00f5a0 0%,#00d2ff 100%); color:#050c18; border:none; padding:7px 10px; border-radius:4px; font-weight:800; font-size:0.74rem; cursor:pointer;">
-                🤝 Validar como Testigo (+5 pts)
-              </button>
+              ${isPatrolAttended ? `<p style="color:#00b0ff;font-weight:700;font-size:0.75rem;margin-top:4px;">🚓 Patrulla presente en el cuadrante. Zona asegurada.</p>` : ''}
+              ${(swarmEngine.calculateDistanceMeters(this.userLocation.lat, this.userLocation.lng, inc.lat, inc.lng) <= 50) ? `
+                <div style="display:flex;gap:6px;margin-top:8px;">
+                  <button class="btn-popup-witness" onclick="if(window.citizenApp) window.citizenApp.voteIncident('${inc.id}', true)" style="flex:1; background:rgba(0,230,118,0.2); border:1px solid #00e676; color:#00e676; padding:6px; border-radius:4px; font-weight:800; font-size:0.72rem; cursor:pointer;">
+                    ✅ Es Real
+                  </button>
+                  <button class="btn-popup-witness" onclick="if(window.citizenApp) window.citizenApp.voteIncident('${inc.id}', false)" style="flex:1; background:rgba(255,23,68,0.2); border:1px solid #ff1744; color:#ff5252; padding:6px; border-radius:4px; font-weight:800; font-size:0.72rem; cursor:pointer;">
+                    ❌ Es Falso
+                  </button>
+                </div>
+              ` : `
+                <div style="margin-top:8px;font-size:0.68rem;color:var(--text-muted);background:rgba(255,255,255,0.05);padding:6px;border-radius:4px;">
+                  👁️ Estás a ${Math.round(swarmEngine.calculateDistanceMeters(this.userLocation.lat, this.userLocation.lng, inc.lat, inc.lng))}m. Calificación reservada a vecinos presentes en la misma calle (≤50m).
+                </div>
+              `}
             </div>
           </div>
         `);
@@ -837,10 +1021,28 @@
       let directDistance = 0;
       let directDuration = 0;
       let directSteps = [];
+      let osrmAlternatives = [];
 
       try {
-        const osrmUrl = `https://router.project-osrm.org/route/v1/${mode}/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`;
-        const resp = await fetch(osrmUrl);
+        let resp;
+        if (mode === 'walking') {
+          try {
+            resp = await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/foot/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`);
+          } catch (e) {}
+          if (!resp || !resp.ok) {
+            try {
+              resp = await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`);
+            } catch (e) {}
+          }
+        } else {
+          try {
+            resp = await fetch(`https://routing.openstreetmap.de/routed-car/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`);
+          } catch (e) {}
+        }
+
+        if (!resp || !resp.ok) {
+          resp = await fetch(`https://router.project-osrm.org/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true&alternatives=true`);
+        }
         if (resp.ok) {
           const data = await resp.json();
           if (data.routes && data.routes.length > 0) {
@@ -854,6 +1056,9 @@
                 const roadName = s.name ? `por <strong>${s.name}</strong>` : 'por vía principal';
                 return `${s.maneuver.type}${modifier} ${roadName} (${Math.round(s.distance)} m)`;
               });
+            }
+            if (data.routes.length > 1) {
+              osrmAlternatives = data.routes.slice(1);
             }
           }
         }
@@ -937,39 +1142,75 @@
         let bestCandidate = null;
         let minCandidateDist = Infinity;
 
-        for (const latDist of lateralDistances) {
-          for (const sign of sideSigns) {
-            const latOff = (sign * latDist * nLat) / 111000;
-            const lngOff = (sign * latDist * nLng) / (111000 * cosLat);
-            const pOffLat = (longitudinalOffset * pLat) / 111000;
-            const pOffLng = (longitudinalOffset * pLng) / (111000 * cosLat);
+        // A. First check if any OSRM street alternative already clears the threat
+        if (osrmAlternatives && osrmAlternatives.length > 0) {
+          for (const altR of osrmAlternatives) {
+            const altCoords = altR.geometry.coordinates.map(c => [c[1], c[0]]);
+            const altDist = this.getMinDistanceToPolyline(altCoords, tLat, tLng);
+            if (altDist >= 65) {
+              let steps = [];
+              if (altR.legs) {
+                steps = altR.legs.flatMap(l => l.steps || []).map(s => {
+                  const roadName = s.name ? `por <strong>${s.name}</strong>` : 'por vía alterna';
+                  return `Desvío seguro: ${s.maneuver.type} ${roadName} (${Math.round(s.distance)} m)`;
+                });
+              }
+              bestCandidate = {
+                coords: altCoords,
+                distance: altR.distance,
+                duration: altR.duration,
+                steps: steps,
+                waypoint: altCoords[Math.floor(altCoords.length / 2)]
+              };
+              break;
+            }
+          }
+        }
 
-            const viaEntry = [tLat - pOffLat + latOff, tLng - pOffLng + lngOff];
-            const viaApex = [tLat + latOff * 1.15, tLng + lngOff * 1.15];
-            const viaExit = [tLat + pOffLat + latOff, tLng + pOffLng + lngOff];
+        // B. If no pre-computed alternative cleared the threat, try a single waypoint bypass
+        if (!bestCandidate) {
+          const lateralDistances = [220, 320];
+          for (const latDist of lateralDistances) {
+            for (const sign of sideSigns) {
+              const latOff = (sign * latDist * nLat) / 111000;
+              const lngOff = (sign * latDist * nLng) / (111000 * cosLat);
+              const viaApex = [tLat + latOff, tLng + lngOff];
 
-            // Try OSRM route through the 3 via points to force the outer street
-            try {
-              const detourUrl = `https://router.project-osrm.org/route/v1/${mode}/${startLatLng.lng},${startLatLng.lat};${viaEntry[1]},${viaEntry[0]};${viaApex[1]},${viaApex[0]};${viaExit[1]},${viaExit[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`;
-              const dResp = await fetch(detourUrl);
-              if (dResp.ok) {
-                const dData = await dResp.json();
-                if (dData.routes && dData.routes.length > 0) {
-                  const dR = dData.routes[0];
-                  const testCoords = dR.geometry.coordinates.map(c => [c[1], c[0]]);
-                  const testDistToThreat = this.getMinDistanceToPolyline(testCoords, tLat, tLng);
+              try {
+                let dResp;
+                if (mode === 'walking') {
+                  try {
+                    dResp = await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/foot/${startLatLng.lng},${startLatLng.lat};${viaApex[1]},${viaApex[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
+                  } catch (e) {}
+                  if (!dResp || !dResp.ok) {
+                    try {
+                      dResp = await fetch(`https://routing.openstreetmap.de/routed-foot/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${viaApex[1]},${viaApex[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
+                    } catch (e) {}
+                  }
+                } else {
+                  try {
+                    dResp = await fetch(`https://routing.openstreetmap.de/routed-car/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${viaApex[1]},${viaApex[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
+                  } catch (e) {}
+                }
 
-                  // STRICT REQUIREMENT: Must be at least 75m away from the 50m alert circle
-                  if (testDistToThreat >= 75) {
-                    let steps = [];
-                    if (dR.legs) {
-                      steps = dR.legs.flatMap(l => l.steps || []).map(s => {
-                        const roadName = s.name ? `por <strong>${s.name}</strong>` : 'por calle alterna';
-                        return `Desvío seguro: ${s.maneuver.type} ${roadName} (${Math.round(s.distance)} m)`;
-                      });
-                    }
-                    if (dR.distance < minCandidateDist) {
-                      minCandidateDist = dR.distance;
+                if (!dResp || !dResp.ok) {
+                  dResp = await fetch(`https://router.project-osrm.org/route/v1/driving/${startLatLng.lng},${startLatLng.lat};${viaApex[1]},${viaApex[0]};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`);
+                }
+                if (dResp.ok) {
+                  const dData = await dResp.json();
+                  if (dData.routes && dData.routes.length > 0) {
+                    const dR = dData.routes[0];
+                    const testCoords = dR.geometry.coordinates.map(c => [c[1], c[0]]);
+                    const testDistToThreat = this.getMinDistanceToPolyline(testCoords, tLat, tLng);
+
+                    if (testDistToThreat >= 65) {
+                      let steps = [];
+                      if (dR.legs) {
+                        steps = dR.legs.flatMap(l => l.steps || []).map(s => {
+                          const roadName = s.name ? `por <strong>${s.name}</strong>` : 'por calle alterna';
+                          return `Desvío seguro: ${s.maneuver.type} ${roadName} (${Math.round(s.distance)} m)`;
+                        });
+                      }
                       bestCandidate = {
                         coords: testCoords,
                         distance: dR.distance,
@@ -977,15 +1218,16 @@
                         steps: steps,
                         waypoint: viaApex
                       };
+                      break;
                     }
                   }
                 }
-              }
-            } catch (e) {}
+              } catch (e) {}
 
+              if (bestCandidate) break;
+            }
             if (bestCandidate) break;
           }
-          if (bestCandidate) break;
         }
 
         // Apply best approved candidate or guaranteed geometric street corridor
@@ -1254,6 +1496,7 @@
       this.isConfigured = false;
       this.isConnected = false;
       this.lastKnownIncidentIds = new Set();
+      this.seenBroadcastIds = new Set();
     }
 
     init() {
@@ -1313,10 +1556,25 @@
         }
       }, (err) => console.warn('Sync error:', err));
 
+      let initialBroadcastLoad = true;
       this.db.collection('broadcasts').onSnapshot((snapshot) => {
+        if (initialBroadcastLoad) {
+          // On startup load, index existing broadcasts as seen so alarms do not fire automatically
+          snapshot.forEach(doc => {
+            this.seenBroadcastIds.add(doc.id);
+          });
+          initialBroadcastLoad = false;
+          return;
+        }
+
         snapshot.docChanges().forEach(change => {
           if (change.type === 'added') {
-            syncBus.emit('COMMUNITY_BROADCAST', change.doc.data());
+            const data = change.doc.data();
+            const bcId = change.doc.id || data.id;
+            if (!this.seenBroadcastIds.has(bcId)) {
+              this.seenBroadcastIds.add(bcId);
+              syncBus.emit('COMMUNITY_BROADCAST', { ...data, id: bcId });
+            }
           }
         });
       }, (err) => console.warn('Broadcast sync error:', err));
@@ -1615,6 +1873,7 @@
       try { this.setupSimulation(); } catch (e) { console.error('setupSimulation error:', e); }
       try { this.setupSyncEvents(); } catch (e) { console.error('setupSyncEvents error:', e); }
       try { this.updateTrustUI(); } catch (e) { console.error('updateTrustUI error:', e); }
+      try { this.setupChat(); } catch (e) { console.error('setupChat error:', e); }
     }
 
     setupAuth() {
@@ -1637,7 +1896,15 @@
         if (modal) modal.classList.add('hidden');
       };
 
-      btnProfileLogin?.addEventListener('click', openModal);
+      const btnHeaderLogin = document.getElementById('btn-login-google-header');
+      btnHeaderLogin?.addEventListener('click', (e) => {
+        e.preventDefault();
+        openModal();
+      });
+      btnProfileLogin?.addEventListener('click', (e) => {
+        e.preventDefault();
+        openModal();
+      });
       btnCloseModal?.addEventListener('click', closeModal);
       
       if (modal) {
@@ -1698,8 +1965,14 @@
       const btnProfileLogin = document.getElementById('btn-login-google-profile');
       const btnProfileLogout = document.getElementById('btn-logout-profile');
       const modal = document.getElementById('marketing-login-modal');
+      const guestLockCard = document.getElementById('guest-report-lock-card');
+      const authReportContent = document.getElementById('auth-report-allowed-content');
 
       if (user) {
+        // Toggle Report tab permissions
+        if (guestLockCard) guestLockCard.classList.add('hidden');
+        if (authReportContent) authReportContent.classList.remove('hidden');
+
         // Header pill
         if (headerSlot) {
           headerSlot.innerHTML = `
@@ -1729,31 +2002,94 @@
         if (btnProfileLogout) btnProfileLogout.classList.remove('hidden');
 
       } else {
+        // Toggle Report tab permissions for Guest
+        if (guestLockCard) guestLockCard.classList.remove('hidden');
+        if (authReportContent) authReportContent.classList.add('hidden');
+
         // Header Button
         if (headerSlot) {
           headerSlot.innerHTML = `
             <a href="login.html" class="btn-auth-google-header" id="btn-login-google-header" title="Iniciar sesión con cuenta de Google">
-              <span class="g-icon">🔐</span><span class="auth-btn-text"> Iniciar con Google</span>
+              <span class="g-icon">🔐</span><span class="auth-btn-text"><span class="auth-btn-text-full"> Iniciar con Google</span><span class="auth-btn-text-short"> Entrar</span></span>
             </a>
           `;
+          headerSlot.querySelector('#btn-login-google-header')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('marketing-login-modal')?.classList.remove('hidden');
+          });
         }
 
         // Profile Tab Identity Card
         if (avatarEl) avatarEl.src = 'https://api.dicebear.com/7.x/bottts/svg?seed=guest';
         if (nameEl) nameEl.textContent = 'Invitado / Anónimo';
-        if (emailEl) emailEl.textContent = 'Sin cuenta vinculada';
+        if (emailEl) emailEl.textContent = 'Sin cuenta vinculada (Navegación Libre)';
         if (badgeEl) {
           badgeEl.className = 'badge-verified-email';
           badgeEl.style.background = 'rgba(255, 184, 0, 0.15)';
           badgeEl.style.borderColor = 'var(--color-warning)';
           badgeEl.style.color = 'var(--color-warning)';
-          badgeEl.innerHTML = '🟡 Modo Local';
+          badgeEl.innerHTML = '🟡 Modo Invitado';
         }
         if (btnProfileLogin) {
           btnProfileLogin.classList.remove('hidden');
-          btnProfileLogin.onclick = () => { window.location.href = 'login.html'; };
+          btnProfileLogin.onclick = (e) => {
+            e.preventDefault();
+            document.getElementById('marketing-login-modal')?.classList.remove('hidden');
+          };
         }
         if (btnProfileLogout) btnProfileLogout.classList.add('hidden');
+      }
+
+      // --- STRICT ROLE VISIBILITY ENFORCEMENT ---
+      const isGuest = !user;
+      const isCitizen = user && (user.role === 'citizen' || !user.role);
+      const isPrivileged = user && (user.role === 'admin' || user.role === 'patrol');
+
+      const dNavReport = document.getElementById('d-nav-report');
+      const dNavProfile = document.getElementById('d-nav-profile');
+      const dNavChat = document.getElementById('d-nav-chat');
+      const dLinkAdmin = document.getElementById('link-admin-panel');
+
+      const mNavReport = document.getElementById('nav-btn-report');
+      const mNavProfile = document.getElementById('nav-btn-profile');
+      const mNavChat = document.getElementById('nav-btn-chat');
+
+      if (isGuest) {
+        // Guests only see Map and Routes
+        if (dNavReport) dNavReport.style.display = 'none';
+        if (dNavProfile) dNavProfile.style.display = 'none';
+        if (dNavChat) dNavChat.style.display = 'none';
+        if (dLinkAdmin) dLinkAdmin.style.display = 'none';
+
+        if (mNavReport) mNavReport.style.display = 'none';
+        if (mNavProfile) mNavProfile.style.display = 'none';
+        if (mNavChat) mNavChat.style.display = 'none';
+
+        const activeTab = document.querySelector('.desktop-tab-btn.active')?.dataset?.tab ||
+                          document.querySelector('.nav-tab-item.active')?.dataset?.tab;
+        if (activeTab === 'report' || activeTab === 'profile' || activeTab === 'chat') {
+          document.getElementById('d-nav-map')?.click() || document.getElementById('nav-btn-map')?.click();
+        }
+      } else if (isCitizen) {
+        // Citizens see community tabs, but C2 is hidden
+        if (dNavReport) dNavReport.style.display = '';
+        if (dNavProfile) dNavProfile.style.display = '';
+        if (dNavChat) dNavChat.style.display = '';
+        if (dLinkAdmin) dLinkAdmin.style.display = 'none';
+
+        if (mNavReport) mNavReport.style.display = '';
+        if (mNavProfile) mNavProfile.style.display = '';
+        if (mNavChat) mNavChat.style.display = '';
+      } else if (isPrivileged) {
+        // Admins and Patrols see all tabs + C2
+        if (dNavReport) dNavReport.style.display = '';
+        if (dNavProfile) dNavProfile.style.display = '';
+        if (dNavChat) dNavChat.style.display = '';
+        if (dLinkAdmin) dLinkAdmin.style.display = '';
+
+        if (mNavReport) mNavReport.style.display = '';
+        if (mNavProfile) mNavProfile.style.display = '';
+        if (mNavChat) mNavChat.style.display = '';
       }
     }
 
@@ -1853,6 +2189,11 @@
         setTimeout(() => {
           document.getElementById('btn-popup-report-here')?.addEventListener('click', () => {
             sounds.playWarningPing();
+            if (!this.currentUser) {
+              this.showToast('🔒 Acceso Restringido: Inicia sesión con tu cuenta de ciudadano para reportar o registrar eventos.', 'warning');
+              document.getElementById('marketing-login-modal')?.classList.remove('hidden');
+              return;
+            }
             this.userCoords = { lat: latlng.lat, lng: latlng.lng };
             this.riskMap.map.closePopup();
             const sosBtn = document.querySelector('[data-tab="report"]');
@@ -1917,6 +2258,21 @@
       const switchTab = (target) => {
         sounds.playClick();
 
+        // Enforce guest role permissions
+        if (!this.currentUser && (target === 'report' || target === 'profile' || target === 'chat')) {
+          this.showToast('🔒 Registro requerido. Inicia sesión con Google para acceder.', 'warning');
+          if (firebaseAuth.openGoogleChooser) {
+            firebaseAuth.openGoogleChooser().then(u => {
+              if (u) {
+                this.currentUser = u;
+                this.renderAuthUI(u);
+                switchTab(target);
+              }
+            });
+          }
+          target = 'map';
+        }
+
         mobileNavItems.forEach(n => {
           if (n.dataset.tab === target) n.classList.add('active');
           else n.classList.remove('active');
@@ -1934,12 +2290,22 @@
 
         const isMobile = window.innerWidth < 900;
         if (isMobile) {
+          if (mapCanvasPane) mapCanvasPane.classList.add('mobile-map-active');
           if (target === 'map') {
-            if (mapCanvasPane) mapCanvasPane.classList.add('mobile-map-active');
-            if (sidebarPanels) sidebarPanels.classList.add('mobile-map-view');
+            if (sidebarPanels) {
+              sidebarPanels.classList.add('mobile-map-view');
+              sidebarPanels.classList.remove('mobile-dock-active');
+            }
+          } else if (target === 'routes') {
+            if (sidebarPanels) {
+              sidebarPanels.classList.remove('mobile-map-view');
+              sidebarPanels.classList.add('mobile-dock-active');
+            }
           } else {
-            if (mapCanvasPane) mapCanvasPane.classList.remove('mobile-map-active');
-            if (sidebarPanels) sidebarPanels.classList.remove('mobile-map-view');
+            if (sidebarPanels) {
+              sidebarPanels.classList.remove('mobile-map-view');
+              sidebarPanels.classList.remove('mobile-dock-active');
+            }
           }
         }
 
@@ -1972,6 +2338,16 @@
 
       document.getElementById('btn-recenter-gps')?.addEventListener('click', () => {
         sounds.playClick();
+        geoResolver.resolveLocation();
+        if (this.riskMap) {
+          this.riskMap.setUserLocation(this.userCoords.lat, this.userCoords.lng, true);
+        }
+      });
+
+      document.getElementById('gps-status-pill')?.addEventListener('click', () => {
+        sounds.playClick();
+        this.showToast('📍 Buscando ubicación GPS del dispositivo...', 'info');
+        geoResolver.resolveLocation();
         if (this.riskMap) {
           this.riskMap.setUserLocation(this.userCoords.lat, this.userCoords.lng, true);
         }
@@ -1983,6 +2359,14 @@
       const desktopQuickPanic = document.getElementById('btn-quick-panic-desktop');
       const cancelBtn = document.getElementById('panic-cancel-btn');
       const categoryChips = document.querySelectorAll('.category-chip');
+      const btnGuestReportLogin = document.getElementById('btn-guest-report-login');
+
+      if (btnGuestReportLogin) {
+        btnGuestReportLogin.addEventListener('click', () => {
+          sounds.playClick();
+          document.getElementById('marketing-login-modal')?.classList.remove('hidden');
+        });
+      }
 
       categoryChips.forEach(chip => {
         chip.addEventListener('click', () => {
@@ -1990,10 +2374,23 @@
           categoryChips.forEach(c => c.classList.remove('active'));
           chip.classList.add('active');
           this.currentCategory = chip.dataset.category;
+          const catInfo = INCIDENT_CATEGORIES[this.currentCategory] || { name: 'Alerta SOS', icon: '🚨' };
+          const iconEl = document.getElementById('panic-btn-active-icon');
+          const textEl = document.getElementById('panic-btn-active-text');
+          const subEl = document.getElementById('panic-btn-active-sub');
+          if (iconEl) iconEl.textContent = catInfo.icon;
+          if (textEl) textEl.textContent = `REPORTAR ${catInfo.name.toUpperCase()}`;
+          if (subEl) subEl.textContent = `Toca para activar colmena`;
         });
       });
 
       const triggerPanic = () => {
+        if (!this.currentUser) {
+          sounds.playWarningPing();
+          this.showToast('🔒 Acceso Restringido: Inicia sesión con tu cuenta de ciudadano para reportar alertas o eventos SOS.', 'warning');
+          document.getElementById('marketing-login-modal')?.classList.remove('hidden');
+          return;
+        }
         sounds.playWarningPing();
         this.startPanicCountdown();
       };
@@ -2035,14 +2432,15 @@
     }
 
     dispatchReport() {
+      if (!this.currentUser) {
+        this.showToast('🔒 Debes iniciar sesión para reportar o registrar eventos.', 'warning');
+        document.getElementById('marketing-login-modal')?.classList.remove('hidden');
+        return;
+      }
       const noteInput = document.getElementById('report-note-input');
       const note = noteInput ? noteInput.value.trim() : '';
 
-      const reporterUser = this.currentUser || {
-        uid: syncBus.getSenderId(),
-        email: 'anónimo',
-        displayName: 'Ciudadano Anónimo'
-      };
+      const reporterUser = this.currentUser;
 
       const { incident, isEscalated } = swarmEngine.reportIncident({
         lat: this.userCoords.lat,
@@ -2080,6 +2478,27 @@
       const btnModeDriving = document.getElementById('btn-mode-driving');
       const searchInput = document.getElementById('route-search-input');
       const btnSearch = document.getElementById('btn-search-address');
+
+      // Mobile Bottom Sheet Collapse / Expand Toggles (Google Maps Style)
+      const grabBar = document.getElementById('routes-sheet-grab-bar');
+      const toggleHeader = document.getElementById('routes-sheet-toggle-btn');
+      const toggleLabel = document.getElementById('sheet-toggle-label');
+      const sidebarPanels = document.querySelector('.app-sidebar-panels');
+
+      const toggleSheet = () => {
+        if (!sidebarPanels) return;
+        sounds.playClick();
+        const isCollapsed = sidebarPanels.classList.toggle('collapsed');
+        if (toggleLabel) {
+          toggleLabel.textContent = isCollapsed ? 'Expandir ⬆️' : 'Plegar ⬇️';
+        }
+        if (this.riskMap && this.riskMap.map) {
+          setTimeout(() => this.riskMap.map.invalidateSize(), 200);
+        }
+      };
+
+      grabBar?.addEventListener('click', toggleSheet);
+      toggleHeader?.addEventListener('click', toggleSheet);
 
       const setTravelMode = (mode) => {
         sounds.playClick();
@@ -2385,6 +2804,35 @@
       });
 
       syncBus.on('COMMUNITY_BROADCAST', (bc) => {
+        if (bc.active === false) return;
+
+        // Calculate distance if coordinates are present
+        let isWithinRadius = true;
+        let distanceM = 0;
+        if (bc.centerLat && bc.centerLng && this.userCoords) {
+          const R = 6371e3;
+          const phi1 = this.userCoords.lat * Math.PI / 180;
+          const phi2 = bc.centerLat * Math.PI / 180;
+          const deltaPhi = (bc.centerLat - this.userCoords.lat) * Math.PI / 180;
+          const deltaLambda = (bc.centerLng - this.userCoords.lng) * Math.PI / 180;
+          const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+                    Math.cos(phi1) * Math.cos(phi2) *
+                    Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          distanceM = Math.round(R * c);
+
+          const alertRadius = bc.radiusMeters || 50;
+          if (distanceM > alertRadius) {
+            isWithinRadius = false;
+          }
+        }
+
+        // Strictly alert only users within <= 50m of the alert zone
+        if (!isWithinRadius) {
+          this.showToast(`📢 Alerta en cuadrante (${distanceM}m): ${bc.title}`, 'info');
+          return;
+        }
+
         sounds.playCriticalAlarm();
         const modal = document.getElementById('broadcast-alert-modal');
         if (modal) {
@@ -2442,7 +2890,18 @@
         : incidents.map(inc => {
             const isCrit = inc.status === INCIDENT_STATES.CRITICAL_SWARM;
             const cat = INCIDENT_CATEGORIES[inc.category] || INCIDENT_CATEGORIES.FIGHT;
-            const isWitness = inc.reporters.some(r => r.userId === syncBus.getSenderId());
+            const myId = syncBus.getSenderId();
+            const hasConfirmed = inc.reporters && inc.reporters.some(r => r.userId === myId);
+            const hasRefuted = inc.refutations && inc.refutations.some(r => r.userId === myId);
+            const hasVoted = hasConfirmed || hasRefuted;
+
+            // Distance calculation to check if user is on the same street segment (<=50m)
+            let distM = null;
+            if (this.userCoords && inc.lat && inc.lng) {
+              distM = Math.round(swarmEngine.calculateDistanceMeters(this.userCoords.lat, this.userCoords.lng, inc.lat, inc.lng));
+            }
+            const isOnStreet = distM !== null ? (distM <= 50) : true;
+            const refutedCount = (inc.refutations && inc.refutations.length) || 0;
 
             return `
               <div class="incident-card ${isCrit ? 'card-critical' : 'card-warning'}">
@@ -2452,15 +2911,38 @@
                     <span class="card-title">${cat.name}</span>
                     <span class="card-badge ${isCrit ? 'badge-critical' : 'badge-warning'}">${isCrit ? '🚨 Enjambre Crítico' : '🟡 Sondeo'}</span>
                   </div>
-                  <p class="card-sub">${inc.reportCount} ciudadano(s) coinciden en 50m</p>
+                  <p class="card-sub">
+                    ${distM !== null ? `📍 A ${distM}m en tu zona &bull; ` : ''}
+                    👥 ${inc.reportCount} confirmación(es)${refutedCount > 0 ? ` &bull; ⚠️ ${refutedCount} desmentido(s)` : ''}
+                  </p>
+                  
                   <div class="incident-witness-action-row" style="margin-top:8px;">
-                    ${!isWitness ? `
-                      <button class="btn-witness-vote" onclick="window.citizenApp.voteWitness('${inc.id}')">
-                        👍 Yo también lo veo (+5 pts)
+                    ${!this.currentUser ? `
+                      <button class="btn-guest-vote-prompt" onclick="document.getElementById('marketing-login-modal')?.classList.remove('hidden')" title="Inicia sesión para participar en el consenso vecinal" style="width:100%;background:rgba(255,184,0,0.08);border:1px dashed rgba(255,184,0,0.4);color:var(--color-warning);padding:8px 10px;border-radius:8px;font-size:0.72rem;font-weight:700;cursor:pointer;text-align:center;">
+                        🔒 Inicia sesión como ciudadano para validar o desmentir este evento (+5 pts)
                       </button>
-                    ` : `
-                      <span style="font-size:0.72rem;color:var(--color-safe);font-weight:700;">✅ Ya diste tu testimonio</span>
-                    `}
+                    ` : (
+                      !hasVoted ? (
+                        isOnStreet ? `
+                          <div class="witness-dual-buttons" style="display:flex;gap:8px;width:100%;">
+                            <button class="btn-witness-confirm" onclick="window.citizenApp.voteIncident('${inc.id}', true)" title="Confirmar que el evento es real" style="flex:1;background:rgba(0,230,118,0.15);border:1px solid #00e676;color:#00e676;padding:8px 6px;border-radius:8px;font-size:0.75rem;font-weight:700;cursor:pointer;">
+                              ✅ Es Real (+5 pts)
+                            </button>
+                            <button class="btn-witness-refute" onclick="window.citizenApp.voteIncident('${inc.id}', false)" title="Desmentir reporte como falso" style="flex:1;background:rgba(255,23,68,0.15);border:1px solid #ff1744;color:#ff5252;padding:8px 6px;border-radius:8px;font-size:0.75rem;font-weight:700;cursor:pointer;">
+                              ❌ Es Falso (+5 pts)
+                            </button>
+                          </div>
+                        ` : `
+                          <div class="witness-too-far-badge" style="background:rgba(255,255,255,0.04);border:1px dashed rgba(255,255,255,0.15);padding:6px 10px;border-radius:8px;font-size:0.72rem;color:var(--text-muted);line-height:1.3;">
+                            👁️ Alerta a ${distM}m. Calificación reservada a vecinos presentes en la misma calle (≤50m).
+                          </div>
+                        `
+                      ) : `
+                        <span style="font-size:0.72rem;color:${hasConfirmed ? 'var(--color-safe)' : '#ff5252'};font-weight:700;">
+                          ${hasConfirmed ? '✅ Testimonio registrado: Confirmaste que es REAL' : '❌ Testimonio registrado: Indicaste que es FALSO'}
+                        </span>
+                      `
+                    )}
                   </div>
                 </div>
               </div>
@@ -2471,18 +2953,54 @@
       if (desktopFeed) desktopFeed.innerHTML = html;
     }
 
-    voteWitness(incidentId) {
+    voteIncident(incidentId, isReal) {
       sounds.playClick();
-      const success = swarmEngine.validateIncidentAsWitness(incidentId);
-      if (success) {
-        const updated = swarmEngine.incidents.find(i => i.id === incidentId);
-        if (updated) firebaseSync.saveIncidentToCloud(updated);
-        this.showToast('🤝 ¡Testimonio registrado! Ganaste +5 pts de reputación.', 'info');
+      if (!this.currentUser) {
+        this.showToast('🔒 Debes iniciar sesión con tu cuenta de ciudadano para validar o desmentir incidentes.', 'warning');
+        document.getElementById('marketing-login-modal')?.classList.remove('hidden');
+        return;
+      }
+      const res = swarmEngine.voteIncidentVerdict(incidentId, isReal, this.userCoords);
+      if (res.success) {
+        if (isReal) {
+          sounds.playDispatchChime();
+          this.showToast('✅ ¡Testimonio registrado como REAL! Ganaste +5 pts de reputación.', 'info');
+          if (res.isEscalated) {
+            sounds.playCriticalAlarm();
+            this.showToast('🚨 ¡Alerta escalada a Enjambre Crítico por consenso vecinal!', 'critical');
+          }
+          if (res.incident) firebaseSync.saveIncidentToCloud(res.incident);
+        } else {
+          sounds.playWarningPing();
+          if (res.isDismissed) {
+            this.showToast('🛑 ¡Alerta descartada por consenso! Varios vecinos en la calle confirmaron que era falsa.', 'warning');
+            if (window.firebaseSync && window.firebaseSync.db) {
+              window.firebaseSync.db.collection('incidents').doc(incidentId).delete().catch(() => {});
+            }
+          } else {
+            this.showToast('❌ Registraste que la alerta es FALSA (+5 pts). Esperando 2do testigo para descartarla.', 'info');
+            if (res.incident) firebaseSync.saveIncidentToCloud(res.incident);
+          }
+        }
       } else {
-        this.showToast('Ya validaste este reporte anteriormente.', 'warning');
+        if (res.reason === 'TOO_FAR') {
+          this.showToast(`📍 Estás a ${res.distance}m. Solo vecinos presentes en la misma calle (≤50m) pueden verificar este evento.`, 'warning');
+        } else if (res.reason === 'ALREADY_VOTED') {
+          this.showToast('Ya registraste tu testimonio sobre esta alerta.', 'warning');
+        } else {
+          this.showToast('No se pudo registrar la votación.', 'warning');
+        }
       }
       this.renderFeed();
       this.updateTrustUI();
+      if (this.riskMap) {
+        this.riskMap.renderActiveIncidents();
+        this.riskMap.renderHeatmap();
+      }
+    }
+
+    voteWitness(incidentId) {
+      return this.voteIncident(incidentId, true);
     }
 
     updateTrustUI() {
@@ -2522,6 +3040,207 @@
           `;
         }).join('');
       }
+    }
+
+    setupChat() {
+      const channelBtns = document.querySelectorAll('.chat-channel-btn');
+      const toggleContactsBtn = document.getElementById('btn-toggle-contacts-view');
+      const closeContactsBtn = document.getElementById('btn-close-contacts');
+      const contactsDrawer = document.getElementById('chat-contacts-drawer');
+      const roleFilterChips = document.querySelectorAll('.role-filter-chip');
+      const chatForm = document.getElementById('citizen-chat-form');
+      const chatInput = document.getElementById('citizen-chat-input');
+      const priorityRadios = document.querySelectorAll('input[name="chat-priority"]');
+
+      channelBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          sounds.playClick();
+          channelBtns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const channel = btn.dataset.channel;
+          if (window.chatService) window.chatService.selectChannel(channel);
+          this.updateChatHeader(channel);
+          this.renderChatMessages();
+          if (contactsDrawer) contactsDrawer.classList.add('hidden');
+        });
+      });
+
+      toggleContactsBtn?.addEventListener('click', () => {
+        sounds.playClick();
+        if (contactsDrawer) {
+          contactsDrawer.classList.toggle('hidden');
+          if (!contactsDrawer.classList.contains('hidden')) {
+            this.renderChatContacts('ALL');
+          }
+        }
+      });
+      closeContactsBtn?.addEventListener('click', () => {
+        sounds.playClick();
+        if (contactsDrawer) contactsDrawer.classList.add('hidden');
+      });
+
+      roleFilterChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+          sounds.playClick();
+          roleFilterChips.forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+          this.renderChatContacts(chip.dataset.role);
+        });
+      });
+
+      priorityRadios.forEach(radio => {
+        radio.addEventListener('change', () => {
+          document.querySelectorAll('.priority-chip').forEach(p => p.classList.remove('active'));
+          radio.closest('.priority-chip')?.classList.add('active');
+        });
+      });
+
+      chatForm?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const text = chatInput?.value.trim();
+        if (!text) return;
+        const selectedPriority = document.querySelector('input[name="chat-priority"]:checked')?.value || 'NORMAL';
+        if (window.chatService) {
+          window.chatService.sendMessage({
+            text,
+            priority: selectedPriority,
+            currentUser: this.currentUser
+          });
+        }
+        if (chatInput) chatInput.value = '';
+        sounds.playDispatchChime();
+        this.renderChatMessages();
+      });
+
+      if (window.chatService) {
+        window.chatService.onMessage(() => {
+          this.renderChatMessages();
+        });
+      }
+
+      this.renderChatMessages();
+      this.renderChatContacts('ALL');
+    }
+
+    updateChatHeader(channelId, contact = null) {
+      const title = document.getElementById('citizen-chat-title');
+      const subtitle = document.getElementById('citizen-chat-subtitle');
+      const icon = document.getElementById('citizen-chat-icon');
+      if (contact) {
+        if (title) title.textContent = `Chat Directo: ${contact.displayName || contact.email}`;
+        const roleName = contact.role === 'admin' ? 'Administrador' : (contact.role === 'patrol' ? 'Patrullero Cuadrante' : 'Ciudadano');
+        if (subtitle) subtitle.textContent = `Mensaje privado 1 a 1 (${roleName}) • ⭐ ${contact.trustScore || 100} pts`;
+        if (icon) icon.textContent = contact.role === 'patrol' ? '🚓' : (contact.role === 'admin' ? '🛡️' : '👤');
+      } else if (channelId === 'emergencias') {
+        if (title) title.textContent = 'Canal de Emergencias SOS 🚨';
+        if (subtitle) subtitle.textContent = 'Alertas prioritarias en progreso y solicitudes de auxilio';
+        if (icon) icon.textContent = '🚨';
+      } else if (channelId === 'cuadrante') {
+        if (title) title.textContent = 'Enlace Cuadrante & Patrullas 🚓';
+        if (subtitle) subtitle.textContent = 'Canal directo de coordinación con autoridades del sector';
+        if (icon) icon.textContent = '🚓';
+      } else {
+        if (title) title.textContent = 'Canal General de la Colmena 💬';
+        if (subtitle) subtitle.textContent = 'Comunidad vecinal abierta y coordinación ciudadana';
+        if (icon) icon.textContent = '💬';
+      }
+    }
+
+    renderChatMessages() {
+      const container = document.getElementById('citizen-chat-messages');
+      if (!container || !window.chatService) return;
+      const myId = this.currentUser ? this.currentUser.uid : (window.syncBus ? window.syncBus.getSenderId() : 'guest');
+      const messages = window.chatService.getMessagesForCurrentContext(myId);
+
+      if (messages.length === 0) {
+        container.innerHTML = '<div style="text-align:center;padding:40px 10px;color:var(--text-muted);font-size:0.8rem;">Sin mensajes en esta conversación. ¡Sé el primero en escribir!</div>';
+        return;
+      }
+
+      container.innerHTML = messages.map(m => {
+        const isSelf = (m.senderId === myId) || (this.currentUser && m.senderEmail && this.currentUser.email && m.senderEmail.toLowerCase() === this.currentUser.email.toLowerCase());
+        const timeStr = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const isEmergency = m.priority === 'EMERGENCY';
+        const isWarning = m.priority === 'WARNING';
+        const priorityClass = isEmergency ? 'priority-emergency' : (isWarning ? 'priority-warning' : 'priority-normal');
+        const roleBadge = m.senderRole === 'admin' 
+          ? '<span class="contact-role-badge badge-role-admin">🛡️ Admin</span>'
+          : (m.senderRole === 'patrol' 
+            ? '<span class="contact-role-badge badge-role-patrol">🚓 Patrullero</span>'
+            : '<span class="contact-role-badge badge-role-citizen">👤 Vecino</span>');
+
+        return `
+          <div class="chat-msg-row ${isSelf ? 'msg-self' : 'msg-other'}">
+            <img src="${m.senderAvatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=anon'}" alt="${m.senderName}" class="msg-avatar">
+            <div class="msg-bubble ${priorityClass}">
+              <div class="msg-meta-row">
+                <span class="msg-sender-name">${isSelf ? 'Tú' : m.senderName}</span>
+                ${roleBadge}
+                ${isEmergency ? '<span class="msg-priority-badge badge-p-emergency">🚨 EMERGENCIA</span>' : (isWarning ? '<span class="msg-priority-badge badge-p-warning">⚠️ AVISO</span>' : '')}
+                <span class="msg-time">${timeStr}</span>
+              </div>
+              <div class="msg-text-content">${this.escapeHtml(m.text)}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      container.scrollTop = container.scrollHeight;
+    }
+
+    renderChatContacts(roleFilter = 'ALL') {
+      const listEl = document.getElementById('citizen-contacts-list');
+      const countEl = document.getElementById('chat-contacts-count');
+      if (!listEl || !window.chatService) return;
+
+      const contacts = window.chatService.getContacts(roleFilter);
+      if (countEl) countEl.textContent = contacts.length;
+
+      if (contacts.length === 0) {
+        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:0.75rem;">Sin contactos para este rol.</div>';
+        return;
+      }
+
+      listEl.innerHTML = contacts.map(c => {
+        const isPatrol = c.role === 'patrol';
+        const isAdmin = c.role === 'admin';
+        const roleLabel = isAdmin ? '🛡️ Super Admin' : (isPatrol ? '🚓 Patrullero' : '👤 Ciudadano');
+        const badgeClass = isAdmin ? 'badge-role-admin' : (isPatrol ? 'badge-role-patrol' : 'badge-role-citizen');
+
+        return `
+          <div class="chat-contact-card" onclick="window.citizenApp.openDirectChat('${c.uid}')">
+            <img src="${c.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${c.uid}`}" alt="${c.displayName}" class="chat-contact-avatar">
+            <div class="chat-contact-info">
+              <h5>${c.displayName || c.email}</h5>
+              <p>📧 ${c.email}</p>
+              <div style="display:flex;gap:4px;align-items:center;">
+                <span class="contact-role-badge ${badgeClass}">${roleLabel}</span>
+                <span style="font-size:0.62rem;color:var(--color-safe);font-weight:700;">⭐ ${c.trustScore || 100} pts</span>
+              </div>
+            </div>
+            <button style="background:transparent;border:none;font-size:1.1rem;color:var(--color-info);cursor:pointer;" title="Abrir chat">💬</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    openDirectChat(uid) {
+      if (!window.chatService) return;
+      const contacts = window.chatService.getContacts('ALL');
+      const contact = contacts.find(c => c.uid === uid);
+      if (contact) {
+        window.chatService.selectDirectContact(contact);
+        this.updateChatHeader(null, contact);
+        document.querySelectorAll('.chat-channel-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('chat-contacts-drawer')?.classList.add('hidden');
+        this.renderChatMessages();
+      }
+    }
+
+    escapeHtml(str) {
+      return (str || '').replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[m]));
     }
 
     showToast(message, type = 'info') {

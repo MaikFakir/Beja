@@ -879,3 +879,518 @@ html, body.admin-body {
   border-color: var(--color-critical);
 }
 
+/* ==========================================================================
+   QUEUE STATUS SEGMENTED CONTROL (DISPATCH PRIORITY)
+   ========================================================================== */
+.admin-status-segmented-control {
+  display: flex;
+  background: #090e1a;
+  padding: 4px;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.status-segment-btn {
+  flex: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.status-segment-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.status-segment-btn.active {
+  background: rgba(0, 210, 255, 0.16);
+  border-color: var(--color-info);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);
+}
+
+/* Patrol Attended card & badge */
+.admin-card-patrol-attended {
+  border-left: 4px solid #00b0ff !important;
+  background: rgba(0, 176, 255, 0.06) !important;
+}
+.status-patrol-attended {
+  background: rgba(0, 176, 255, 0.18) !important;
+  color: #00b0ff !important;
+  border: 1px solid rgba(0, 176, 255, 0.4) !important;
+}
+
+/* ==========================================================================
+   USER DIRECTORY ROLE FILTERS & MODERATION MODAL
+   ========================================================================== */
+.users-role-filters-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.role-filter-tab {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-glass);
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.role-filter-tab:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.role-filter-tab.active {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.35);
+}
+
+/* User Action Modal */
+.user-moderation-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.user-mod-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid var(--border-glass);
+}
+.user-mod-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid var(--color-accent);
+}
+.user-mod-meta h4 {
+  font-size: 0.95rem;
+  color: #fff;
+}
+.user-mod-meta p {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.mod-section-box {
+  background: #090e1a;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-glass);
+}
+.mod-section-title {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--color-info);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rep-buttons-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.btn-rep-delta {
+  padding: 6px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--border-glass);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  transition: all 0.2s ease;
+}
+.btn-rep-delta.pos:hover {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: var(--color-safe);
+  color: var(--color-safe);
+}
+.btn-rep-delta.neg:hover {
+  background: rgba(255, 42, 85, 0.25);
+  border-color: var(--color-critical);
+  color: var(--color-critical);
+}
+
+/* ==========================================================================
+   VIEW 4: TACTICAL RADIO & COMMS STATION (#admin-chat-panel)
+   ========================================================================== */
+.admin-chat-panel {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  height: 100%;
+  overflow: hidden;
+  background: #050811;
+}
+
+@media (max-width: 900px) {
+  .admin-chat-panel {
+    grid-template-columns: 1fr;
+  }
+  .admin-chat-sidebar {
+    display: none;
+  }
+}
+
+.admin-chat-sidebar {
+  background: #090e1a;
+  border-right: 1px solid var(--border-glass);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-sidebar-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-glass);
+}
+.chat-sidebar-header h4 {
+  font-size: 0.85rem;
+  color: #fff;
+  font-family: var(--font-mono);
+}
+.chat-sidebar-header p {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.admin-chat-channels-list {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--border-glass);
+}
+.chat-group-label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.admin-chat-channel-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+.admin-chat-channel-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.admin-chat-channel-item.active {
+  background: rgba(0, 210, 255, 0.15);
+  border-color: var(--color-info);
+}
+.chan-icon {
+  font-size: 1.1rem;
+}
+.chan-meta strong {
+  display: block;
+  font-size: 0.78rem;
+  color: #fff;
+}
+.chan-meta small {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.admin-chat-contacts-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 12px;
+}
+.contacts-header-flex {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.admin-chat-role-chips {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  overflow-x: auto;
+}
+.chat-role-chip {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-glass);
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chat-role-chip.active {
+  background: var(--color-info);
+  color: #0b0f19;
+  border-color: var(--color-info);
+}
+.admin-contacts-list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.admin-contact-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.admin-contact-item:hover {
+  background: rgba(0, 210, 255, 0.08);
+  border-color: rgba(0, 210, 255, 0.25);
+}
+.admin-contact-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border-glass);
+}
+.admin-contact-meta {
+  flex: 1;
+  min-width: 0;
+}
+.admin-contact-meta h6 {
+  font-size: 0.74rem;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.admin-contact-meta span {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+/* Right Main Chat Panel */
+.admin-chat-main {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: #070a12;
+}
+.admin-chat-top-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: #090e1a;
+  border-bottom: 1px solid var(--border-glass);
+}
+.active-chat-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.active-chat-icon {
+  font-size: 1.4rem;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-glass);
+}
+.active-chat-info h3 {
+  font-size: 0.95rem;
+  color: #fff;
+}
+.active-chat-info p {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.status-live-indicator {
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  color: var(--color-safe);
+  font-weight: 700;
+}
+
+.admin-chat-messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.admin-chat-composer {
+  padding: 14px 20px;
+  background: #090e1a;
+  border-top: 1px solid var(--border-glass);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.admin-chat-priority-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.p-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.admin-priority-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-glass);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  transition: all 0.2s ease;
+}
+.admin-priority-pill input {
+  display: none;
+}
+.admin-priority-pill.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.admin-priority-pill.p-warning.active {
+  background: rgba(255, 184, 0, 0.2);
+  color: #ffb800;
+  border-color: #ffb800;
+}
+.admin-priority-pill.p-emergency.active {
+  background: rgba(255, 42, 85, 0.25);
+  color: #ff2a55;
+  border-color: #ff2a55;
+  box-shadow: 0 0 10px rgba(255, 42, 85, 0.3);
+}
+
+.admin-composer-row {
+  display: flex;
+  gap: 10px;
+}
+.admin-chat-field {
+  flex: 1;
+  height: 42px;
+  padding: 0 14px;
+  font-size: 0.85rem;
+}
+.btn-send-admin-chat {
+  background: var(--color-accent);
+  color: #fff;
+  height: 42px;
+  padding: 0 20px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.btn-send-admin-chat:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.4);
+}
+
+/* Authority Header User Chip */
+.admin-user-header-pill {
+  display: flex;
+  align-items: center;
+}
+
+.authority-header-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-full);
+  padding: 4px 10px 4px 4px;
+}
+
+.auth-chip-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.auth-chip-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  text-align: left;
+}
+
+.auth-chip-name {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.auth-chip-role {
+  font-size: 0.62rem;
+  font-family: var(--font-mono);
+  color: #00d2ff;
+}
+
+.auth-chip-logout {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.auth-chip-logout:hover {
+  color: #ff5c77;
+}
+
