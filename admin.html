@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Beja | Centro de Mando & Despacho Central C2</title>
   <meta name="description" content="Beja: Panel de Control Central de Autoridades y Despacho Táctico para incidentes comunitarios detectados en enjambre.">
   <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
@@ -96,6 +96,8 @@
     <button class="admin-filter-pill" data-category="ROBBERY">🚨 Robos</button>
     <button class="admin-filter-pill" data-category="MEDICAL">🚑 Médica</button>
     <button class="admin-filter-pill" data-category="SUSPICIOUS">👁️ Sospechoso</button>
+    <button class="admin-filter-pill" data-category="ACCIDENT">💥 Accidente</button>
+    <button class="admin-filter-pill" data-category="VANDALISM">🔨 Vandalismo</button>
   </nav>
 
   <!-- Split Tactical Workspace -->
@@ -134,6 +136,15 @@
         <button class="sim-btn-pill" id="admin-sim-fight">⚔️ Riña (3 bots)</button>
         <button class="sim-btn-pill" id="admin-sim-robbery">🚨 Asalto</button>
         <button class="sim-btn-pill" id="btn-toggle-paint-mode" title="Pintar alertas de prueba directamente sobre el mapa (clic y arrastra)">🖌️ Modo Pincel</button>
+        <select id="paint-category-select" class="tactical-input" title="Tipo de alerta que pinta el Modo Pincel" style="background:#0e1726; color:#fff; padding:4px 6px; font-size:0.72rem;">
+          <option value="RANDOM" selected>🎲 Aleatoria</option>
+          <option value="FIGHT">⚔️ Riña / Pelea</option>
+          <option value="ROBBERY">🚨 Robo / Asalto</option>
+          <option value="MEDICAL">🚑 Emergencia Médica</option>
+          <option value="ACCIDENT">💥 Accidente</option>
+          <option value="SUSPICIOUS">👁️ Sospechoso</option>
+          <option value="VANDALISM">🔨 Vandalismo</option>
+        </select>
         <button class="sim-btn-pill" id="admin-sim-reset" style="color: var(--color-critical);">🧹 Reset</button>
       </aside>
     </section>
@@ -308,6 +319,27 @@
           <textarea id="broadcast-message-input" class="tactical-input" rows="3" placeholder="Mensaje para los ciudadanos...">Operativo activo en el cuadrante. Favor transitar con precaución y tomar desvíos seguros.</textarea>
         </div>
 
+        <div>
+          <label class="tray-label" for="broadcast-category-select">Tipo de Alerta</label>
+          <select id="broadcast-category-select" class="tactical-input" style="background:#0e1726; color:#fff;">
+            <option value="GENERAL" selected>📢 Aviso General (sin categoría específica)</option>
+            <option value="FIGHT">⚔️ Riña / Pelea</option>
+            <option value="ROBBERY">🚨 Robo / Asalto</option>
+            <option value="MEDICAL">🚑 Emergencia Médica</option>
+            <option value="ACCIDENT">💥 Accidente de Tránsito</option>
+            <option value="SUSPICIOUS">👁️ Actividad Sospechosa</option>
+            <option value="VANDALISM">🔨 Vandalismo / Daño</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="tray-label">Zona / Centro del Aviso</label>
+          <div class="broadcast-zone-picker-row">
+            <button type="button" class="tactical-btn" id="btn-open-broadcast-zone-pick">🎯 Elegir Zona en el Mapa</button>
+            <span id="broadcast-zone-readout">Usando el centro actual del mapa táctico</span>
+          </div>
+        </div>
+
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
           <div>
             <label class="tray-label" for="broadcast-radius-select">Radio de Notificación</label>
@@ -354,7 +386,16 @@
             <option value="MEDICAL">🚑 Emergencia Médica</option>
             <option value="ACCIDENT">🚗 Accidente Vial</option>
             <option value="SUSPICIOUS">👁️ Actividad Sospechosa</option>
+            <option value="VANDALISM">🔨 Vandalismo / Daño</option>
           </select>
+        </div>
+
+        <div>
+          <label class="tray-label">Zona / Centro de Dispersión</label>
+          <div class="broadcast-zone-picker-row">
+            <button type="button" class="tactical-btn" id="btn-open-bulk-zone-pick">🎯 Elegir Zona en el Mapa</button>
+            <span id="bulk-zone-readout">Usando el centro actual del mapa táctico</span>
+          </div>
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">

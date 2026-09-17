@@ -15,8 +15,51 @@
       this.authStateListeners = [];
       this.STORAGE_KEY_USER = 'colmena_auth_current_user';
       this.STORAGE_KEY_ALL_USERS = 'colmena_registered_users_directory';
-      
+      this._usersCloudSyncStarted = false;
+
       this.init();
+    }
+
+    /**
+     * Suscribe el directorio de usuarios a Firestore (colección 'users') para que el panel de
+     * administración vea en tiempo real a CUALQUIER ciudadano que inicie sesión desde CUALQUIER
+     * dispositivo, no solo a los que ya iniciaron sesión en el mismo navegador del admin.
+     * Debe llamarse DESPUÉS de que window.firebaseSync ya exista (bundle.js/admin-bundle.js lo crean
+     * al arrancar), por eso no se invoca aquí en el constructor sino explícitamente desde afuera.
+     */
+    initUsersCloudSync() {
+      if (this._usersCloudSyncStarted) return;
+      if (!(window.firebaseSync && window.firebaseSync.db)) return;
+      this._usersCloudSyncStarted = true;
+      try {
+        window.firebaseSync.db.collection('users').onSnapshot((snapshot) => {
+          const cloudUsers = [];
+          snapshot.forEach(doc => {
+            const data = doc.data() || {};
+            data.uid = doc.id;
+            cloudUsers.push(data);
+          });
+          if (cloudUsers.length === 0) return;
+
+          // La nube manda para cualquier usuario que ya tenga documento ahí; conservamos localmente
+          // solo las cuentas de demostración que aún no existen en Firestore (para no perder el directorio de ejemplo).
+          const localUsers = this.getUsersList();
+          const merged = cloudUsers.slice();
+          localUsers.forEach(lu => {
+            const existsInCloud = cloudUsers.some(cu =>
+              cu.uid === lu.uid || (cu.email && lu.email && cu.email.toLowerCase() === lu.email.toLowerCase())
+            );
+            if (!existsInCloud) merged.push(lu);
+          });
+
+          this.saveUsersList(merged);
+          try {
+            window.dispatchEvent(new CustomEvent('colmena:users-directory-updated', { detail: { users: merged } }));
+          } catch (e) {}
+        }, (err) => console.warn('Users cloud sync error:', err));
+      } catch (e) {
+        console.warn('initUsersCloudSync error:', e);
+      }
     }
 
     init() {

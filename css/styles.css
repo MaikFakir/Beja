@@ -726,12 +726,30 @@ html, body.citizen-body {
   #app-desktop-footer,
   #desktop-map-legend,
   #desktop-direct-c2-block,
-  #floating-desktop-metrics,
   #floating-geo-pill,
   .desktop-header-nav,
   .brand-version-badge,
   .header-bell-btn {
     display: none !important;
+  }
+
+  /* #floating-desktop-metrics contiene los botones "🔥 Capa de Calor" y "🛡️ Puntos Seguros": antes se
+     ocultaba por completo en móvil (junto con el resto de la lista de arriba) sin dar ningún control
+     equivalente para reemplazarlos, así que en celular esos dos botones no se "cortaban": de plano no
+     existían. Se reubica compacto en la esquina y se oculta solo la píldora informativa de "Ruta Segura"
+     (esa info ya se repite en la tarjeta de resultados de ruta) para no competir por espacio. */
+  #floating-desktop-metrics {
+    display: flex !important;
+    top: 10px;
+    right: 8px;
+    gap: 6px;
+  }
+  .floating-top-metric-pill {
+    display: none;
+  }
+  .top-layer-pill-btn {
+    padding: 5px 9px;
+    font-size: 0.68rem;
   }
 
   .bottom-nav-bar {
@@ -2253,6 +2271,44 @@ html, body.citizen-body {
   font-size: clamp(0.55rem, 1.8vw, 0.65rem);
   text-transform: uppercase;
   opacity: 0.85;
+}
+
+.report-location-indicator {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: clamp(0.68rem, 2vw, 0.76rem);
+  color: var(--text-muted);
+}
+
+.report-location-indicator #report-location-text.manual-location-active {
+  color: var(--color-warning, #ffb020);
+  font-weight: 700;
+}
+
+.btn-reset-report-location {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-glass);
+  color: var(--text-main);
+  font-size: clamp(0.62rem, 1.8vw, 0.7rem);
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-reset-report-location.hidden {
+  display: none;
 }
 
 .category-selector-tray {

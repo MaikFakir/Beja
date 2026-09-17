@@ -301,6 +301,48 @@ html, body.admin-body {
   .admin-telemetry-bar {
     display: none; /* Collapses into mobile clean view */
   }
+  /* El header nunca tenía reglas responsive: con 8-9 botones (vistas + Inyector/Audio/Nuevo Aviso/App)
+     en una sola fila sin wrap y sin overflow-x, en pantallas angostas simplemente se salían del viewport
+     y quedaban inalcanzables (ni visibles ni "scrolleables"). Ahora el header pasa a 2 filas: marca arriba,
+     acciones abajo con scroll horizontal (mismo patrón que ya usan .admin-category-nav / .admin-sim-floating-bar). */
+  .admin-header {
+    height: auto;
+    min-height: 54px;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding: 8px 10px;
+  }
+  .admin-header-actions {
+    flex-shrink: 1;
+    flex-basis: 100%;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    justify-content: flex-start;
+  }
+  .admin-header-actions::-webkit-scrollbar {
+    display: none;
+  }
+  .admin-header-actions > * {
+    flex-shrink: 0;
+  }
+  /* 4 botones con flex:1 + nowrap no pueden encogerse por debajo del ancho de su propio texto (el clásico
+     "flexbox min-width:auto pitfall"): en pantallas angostas se desbordaban y el panel padre (overflow:hidden)
+     recortaba en silencio el último botón ("📋 Todas") o parte de "🟡 Sondeo". Se vuelve deslizable en vez de
+     intentar que quepan los 4 a la fuerza. */
+  .admin-status-segmented-control {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .admin-status-segmented-control::-webkit-scrollbar {
+    display: none;
+  }
+  .status-segment-btn {
+    flex: 0 0 auto;
+  }
+
   .admin-mobile-telemetry {
     display: flex;
     align-items: center;
@@ -672,6 +714,34 @@ html, body.admin-body {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 6px;
+}
+
+.broadcast-zone-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.broadcast-zone-picker-row span {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.broadcast-zone-picker-row span.zone-picked {
+  color: var(--color-info, #00d2ff);
+  font-weight: 700;
+}
+
+.zone-pick-marker {
+  font-size: 1.4rem;
+  text-align: center;
+  line-height: 26px;
+  filter: drop-shadow(0 0 4px rgba(0, 210, 255, 0.9));
 }
 
 /* ==========================================================================
@@ -1205,6 +1275,13 @@ html, body.admin-body {
 .admin-contact-item:hover {
   background: rgba(0, 210, 255, 0.08);
   border-color: rgba(0, 210, 255, 0.25);
+}
+.admin-contact-item.active {
+  background: rgba(0, 210, 255, 0.16);
+  border-color: var(--color-info, #00d2ff);
+}
+.admin-contact-item .admin-contact-meta span {
+  font-size: 0.68rem;
 }
 .admin-contact-avatar {
   width: 30px;

@@ -859,6 +859,10 @@
           inc.coolingStartedAt = now;
           inc.updatedAt = now;
           active.push(inc);
+          // Empuja la degradación a la nube: si no se guarda aquí, el próximo snapshot de Firestore
+          // (que sigue creyendo que el incidente está en CRITICAL_SWARM) revierte este cambio visual
+          // en cualquier dispositivo conectado, dando la sensación de que "hay que recargar" para verlo.
+          try { firebaseSync.saveIncidentToCloud(inc); } catch (e) {}
           return;
         }
 
@@ -877,6 +881,9 @@
               timeOfDay: new Date(inc.createdAt).getHours() >= 19 || new Date(inc.createdAt).getHours() <= 5 ? 'NIGHT' : 'DAY'
             });
             this.recordDismissedId(inc.id);
+            // Borra el documento en Firestore para que TODOS los dispositivos dejen de verlo activo de
+            // inmediato, en vez de depender de que cada uno calcule por su cuenta el mismo vencimiento.
+            try { firebaseSync.deleteIncidentFromCloud(inc.id); } catch (e) {}
             return;
           }
         }
@@ -885,6 +892,7 @@
         if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > this.COOLING_YELLOW_DURATION_MS) {
           changed = true;
           this.recordDismissedId(inc.id);
+          try { firebaseSync.deleteIncidentFromCloud(inc.id); } catch (e) {}
           return;
         }
 
@@ -1932,6 +1940,13 @@
       } catch (e) {}
     }
 
+    async deleteIncidentFromCloud(id) {
+      if (!this.isConfigured || !this.db || !id) return;
+      try {
+        await this.db.collection('incidents').doc(id).delete();
+      } catch (e) {}
+    }
+
     updateCloudStatusBadge(isOnline) {
       let badge = document.getElementById('cloud-sync-status-badge');
       if (!badge) {
@@ -2322,6 +2337,9 @@
       this.originCoords = { lat: this.userCoords.lat, lng: this.userCoords.lng };
       this.destinationCoords = null;
       this.pinSelectionMode = null;
+      // Ubicación elegida manualmente en el mapa para el PRÓXIMO reporte SOS (independiente de this.userCoords,
+      // que es la posición GPS EN VIVO y se sobreescribe sola cada vez que el geolocalizador reporta una lectura nueva).
+      this.selectedReportCoords = null;
       this.travelMode = 'walking';
       this.currentUser = firebaseAuth.currentUser;
       this.panicCountdownTimer = null;
@@ -2332,6 +2350,8 @@
 
     init() {
       try { firebaseSync.init(); } catch (e) { console.warn('Sync init warning:', e); }
+      try { firebaseAuth.initUsersCloudSync(); } catch (e) { console.warn('Users cloud sync init warning:', e); }
+      try { if (window.chatService) window.chatService.initCloudSync(); } catch (e) { console.warn('Chat cloud sync init warning:', e); }
       try { this.setupAuth(); } catch (e) { console.warn('Auth setup warning:', e); }
       try {
         this.riskMap = new RiskMap('citizen-map', {
@@ -2692,10 +2712,15 @@
               document.getElementById('marketing-login-modal')?.classList.remove('hidden');
               return;
             }
-            this.userCoords = { lat: latlng.lat, lng: latlng.lng };
+            // Ubicación elegida a propósito por el ciudadano para ESTE reporte. Se guarda aparte de
+            // this.userCoords (que sigue siendo tu posición GPS en vivo) para que el GPS real del celular
+            // no la sobreescriba mientras completas el reporte (bug reportado: en móvil el aviso terminaba
+            // publicándose en tu ubicación real en vez del punto que tocaste en el mapa).
+            this.selectedReportCoords = { lat: latlng.lat, lng: latlng.lng };
             this.riskMap.map.closePopup();
             const sosBtn = document.querySelector('[data-tab="report"]');
             if (sosBtn) sosBtn.click();
+            this.updateReportLocationIndicator();
             this.showToast(`🚨 Preparando reporte en [${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}]`, 'warning');
           });
         }, 100);
@@ -3133,6 +3158,17 @@
           this.showToast('Alerta cancelada.', 'info');
         });
       }
+
+      const btnResetReportLocation = document.getElementById('btn-reset-report-location');
+      if (btnResetReportLocation) {
+        btnResetReportLocation.addEventListener('click', () => {
+          sounds.playClick();
+          this.selectedReportCoords = null;
+          this.updateReportLocationIndicator();
+          this.showToast('📍 Reportando de nuevo en tu ubicación GPS actual.', 'info');
+        });
+      }
+      this.updateReportLocationIndicator();
     }
 
     startPanicCountdown() {
@@ -3165,10 +3201,12 @@
       const note = noteInput ? noteInput.value.trim() : '';
 
       const reporterUser = this.currentUser;
+      // Prioriza la ubicación que el ciudadano eligió a mano en el mapa; si no eligió ninguna, usa su GPS real.
+      const reportCoords = this.selectedReportCoords || this.userCoords;
 
       const { incident, isEscalated } = swarmEngine.reportIncident({
-        lat: this.userCoords.lat,
-        lng: this.userCoords.lng,
+        lat: reportCoords.lat,
+        lng: reportCoords.lng,
         category: this.currentCategory,
         note: note,
         userId: reporterUser.uid,
@@ -3179,6 +3217,10 @@
 
       // Save to Firebase Cloud
       firebaseSync.saveIncidentToCloud(incident);
+
+      // Un reporte manual solo aplica a ESTE reporte: el siguiente vuelve a usar el GPS real por defecto.
+      this.selectedReportCoords = null;
+      this.updateReportLocationIndicator();
 
       if (isEscalated) {
         sounds.playCriticalAlarm();
@@ -3191,6 +3233,25 @@
 
       const mapBtn = document.querySelector('[data-tab="map"]');
       if (mapBtn && window.innerWidth < 900) mapBtn.click();
+    }
+
+    /**
+     * Refleja en la pestaña de reporte si el próximo aviso SOS se va a publicar en un punto
+     * elegido a mano en el mapa, o en tu ubicación GPS real (comportamiento por defecto).
+     */
+    updateReportLocationIndicator() {
+      const textEl = document.getElementById('report-location-text');
+      const resetBtn = document.getElementById('btn-reset-report-location');
+      if (!textEl) return;
+      if (this.selectedReportCoords) {
+        textEl.textContent = `📍 Reportando en el punto elegido en el mapa [${this.selectedReportCoords.lat.toFixed(4)}, ${this.selectedReportCoords.lng.toFixed(4)}]`;
+        textEl.classList.add('manual-location-active');
+        if (resetBtn) resetBtn.classList.remove('hidden');
+      } else {
+        textEl.textContent = '📍 Reportando en tu ubicación GPS actual';
+        textEl.classList.remove('manual-location-active');
+        if (resetBtn) resetBtn.classList.add('hidden');
+      }
     }
 
     setupRoutingControls() {
@@ -3871,8 +3932,11 @@
     renderChatMessages() {
       const container = document.getElementById('citizen-chat-messages');
       if (!container || !window.chatService) return;
-      const myId = this.currentUser ? this.currentUser.uid : (window.syncBus ? window.syncBus.getSenderId() : 'guest');
-      const messages = window.chatService.getMessagesForCurrentContext(myId);
+      const myId = this.currentUser ? this.currentUser.uid : ('usr_guest_' + window.chatService.getOrCreateGuestId());
+      const activeChannel = window.chatService.activeChannelId || 'soporte_general';
+      // Tu conversación entera con Soporte (lo que tú escribiste + lo que Soporte/Control te respondió a TI),
+      // filtrada por la categoría/pestaña que tengas abierta.
+      const messages = window.chatService.getMessagesForCitizen(myId, activeChannel);
 
       if (messages.length === 0) {
         container.innerHTML = '<div style="text-align:center;padding:40px 10px;color:var(--text-muted);font-size:0.8rem;">Sin tickets en esta categoría. Escribe a Soporte Beja para recibir asistencia inmediata.</div>';

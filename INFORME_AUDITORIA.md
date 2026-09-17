@@ -242,3 +242,60 @@ Una aclaración importante: el panel tiene una "puerta de acceso" (pantalla oscu
 ## 12. Estado del despliegue
 
 Todos los cambios de este informe (ambas rondas) fueron subidos a la rama `main` (`git push`). GitHub Pages los toma automáticamente; en 1-2 minutos deberían verse reflejados en `https://maikfakir.github.io/Beja/`. Lo único que falta para el 100% funcional entre dispositivos son los 2 pasos de Firebase Console de la sección 7 (activar Google Sign-In y publicar la regla de Firestore) — eso ya no lo puedo hacer yo, requiere que entres tú a la consola.
+
+---
+
+## PARTE 3 — Tercera ronda de correcciones (validación de 6 problemas reportados tras activar Firebase)
+
+**Nota sobre despliegue de esta ronda:** a diferencia de las dos rondas anteriores, estos cambios quedaron guardados en el working tree pero **no se hicieron commit ni push** — están esperando tu confirmación antes de subirse a `main`/GitHub Pages.
+
+### 19. El panel de control no mostraba a los usuarios ya logueados en Firebase
+
+**Causa raíz:** el directorio de usuarios (`firebaseAuth.getUsersList()`) era 100% `localStorage`, es decir, propio de cada navegador/dispositivo. Existía un intento de escribir cada usuario a Firestore (`db.collection('users').doc(uid).set(...)`), pero **nada leía esa colección de vuelta**: la única pieza de código que sí tenía un `onSnapshot('users')` vivía en una clase `FirebaseAuthService` duplicada dentro de `admin-bundle.js` que **nunca se instancia** (por el mismo patrón de "instancia ganadora" ya documentado en la Parte 1, sección 10: `js/firebaseAuth.js` se carga primero y su instancia es la que se reutiliza siempre). Resultado: un ciudadano nuevo iniciaba sesión perfectamente con Google, pero el admin —viendo desde otro dispositivo— nunca se enteraba, porque su directorio solo reflejaba lo que hubiera pasado en su propio navegador.
+
+**Corrección** (`js/firebaseAuth.js`, `js/bundle.js`, `js/admin-bundle.js`): agregué `initUsersCloudSync()` a la clase que **sí** se usa realmente, que suscribe la colección `users` de Firestore con `onSnapshot` y fusiona los usuarios de la nube con el directorio local (conservando las cuentas de demostración que aún no existen en la nube). Se llama desde ambas apps justo después de que `firebaseSync` ya esté listo, y dispara un evento (`colmena:users-directory-updated`) que hace que el panel de admin se refresque solo, sin recargar.
+
+### 20. Había que recargar la página para ver cambios de alertas en el panel de control
+
+**Causa raíz:** el temporizador que degrada una alerta de roja a amarilla (8 min) y la archiva (20 min más) **solo guardaba el cambio en `localStorage`**, nunca lo empujaba de vuelta a Firestore. Como el panel también tiene un listener en tiempo real (`onSnapshot`) que sobrescribe el estado local con lo que diga la nube cada vez que cambia cualquier incidente, el resultado era que la degradación se veía un instante y luego **se revertía sola** en cuanto llegaba el siguiente snapshot (que seguía creyendo que la alerta estaba en rojo) — de ahí la sensación de "tengo que recargar para que se vea bien". Encontré el mismo hueco en el motor del lado ciudadano. Además, la lista de "Avisos de Zona" del admin se leía con un `.get()` de una sola vez (no en tiempo real), así que un aviso creado por otro despachador tampoco aparecía sin reabrir esa pestaña.
+
+**Corrección** (`js/admin-bundle.js`, `js/bundle.js`): el temporizador de degradación ahora empuja el nuevo estado a Firestore en el momento en que ocurre (`firebaseSync.saveIncidentToCloud`), y el archivado final borra el documento de la nube (`firebaseSync.deleteIncidentFromCloud`, método nuevo — de paso corregí que `resolve()`/`dismiss()` del admin ya lo referenciaban pero nunca existía, así que siempre caían a un camino alterno). Los "Avisos de Zona" ahora también usan `onSnapshot` en vez de una lectura única, y el admin agregó un manejador de error al listener de incidentes para que un fallo de conexión quede visible en consola en vez de morir en silencio.
+
+### 21. En el celular, marcar una alerta en un punto del mapa (no en tu ubicación) la mandaba igual a tu ubicación real
+
+**Causa raíz:** al tocar "🚨 Reportar Incidente en este Punto" en el mapa, el código fijaba la coordenada elegida en la MISMA variable (`this.userCoords`) que usa la suscripción GPS en vivo del celular. En un teléfono real, el chip de GPS entrega lecturas nuevas cada pocos segundos (`watchPosition`), así que —mientras completabas el reporte (elegir categoría, contar 3 segundos de pánico)— el GPS volvía a disparar y **pisaba silenciosamente** el punto que habías elegido, sin que tú lo notaras. En escritorio casi no pasaba porque la geolocalización por Wi-Fi/IP prácticamente no vuelve a emitir después de la primera lectura — por eso el bug se sentía "exclusivo del celular".
+
+**Corrección** (`js/bundle.js`): la ubicación elegida a mano ahora vive en una variable separada (`this.selectedReportCoords`), inmune a las actualizaciones de GPS. El reporte usa esa ubicación si existe, y solo si no, tu GPS real. Además, en la pestaña de reporte ahora hay un indicador visible ("📍 Reportando en el punto elegido en el mapa..." / "📍 Reportando en tu ubicación GPS actual") con un botón para volver a tu ubicación real en cualquier momento, para que nunca quede ambiguo dónde se va a publicar la alerta.
+
+### 22. Chat de soporte: control no podía responderle a una persona en concreto
+
+**Causa raíz, la más profunda de esta ronda:** `js/chatService.js` (el único módulo de chat que cargan ambas páginas) era **100% local**: guardaba todo en `localStorage` y solo se sincronizaba entre pestañas del mismo navegador vía `BroadcastChannel` — nunca se conectó a Firestore, pese a que el resto de la app ya tenía Firebase activo. Encima, el diseño agrupaba los mensajes por **canal/tema** (general, técnico, emergencias), no por **persona**: el "directorio de contactos" del admin devolvía siempre un único contacto fijo ("Mesa de Soporte Beja"), así que no había forma de elegir a un ciudadano específico. Y aunque el admin escribiera una respuesta, el filtro de mensajes exigía que coincidiera con un `senderId` hardcodeado (`user_admin_super`), por lo que en la práctica **el ciudadano nunca veía la respuesta manual de un humano**, solo el bot automático de palabras clave.
+
+**Corrección** (`js/chatService.js`, `js/bundle.js`, `js/admin-bundle.js` — el rediseño más grande de esta ronda):
+- Cada mensaje ahora lleva un `citizenUid` (identifica de qué ciudadano es la conversación, sin importar si lo escribió él o si es una respuesta de soporte dirigida a él).
+- Todo se sube a Firestore (colección `chat_messages`, un documento por mensaje) con `onSnapshot` en tiempo real en ambos lados — ahora sí cruza dispositivos.
+- El panel de admin (pestaña "Directorio por Roles") muestra la lista **real** de ciudadanos que han escrito, no un contacto de mentira; al hacer clic en uno, el chat se abre en modo 1 a 1 y la respuesta del despachador (`sendSupportReply`) queda etiquetada solo para esa persona.
+- Los invitados sin cuenta ahora reciben un id estable guardado en su navegador (antes todos los invitados compartían el mismo identificador genérico y sus mensajes se mezclaban entre sí).
+
+### 23. Avisos por zona: elegir la zona y el tipo de alerta no funcionaba bien
+
+Encontré varios problemas relacionados:
+- El diccionario de categorías del panel de admin **no tenía** `ACCIDENT` ni `VANDALISM` (sí existían en el lado ciudadano y en los propios menús del admin) — un incidente de ese tipo se mostraba mal etiquetado como "Riña/Pelea" en el mapa y la cola, y no aparecía en ningún filtro. **Corregido**, y agregué las 2 pestañas de filtro que faltaban.
+- La "zona" de un Aviso o del Inyector Masivo se tomaba **en silencio** como "el centro que el mapa tenga en ese momento", sin que tú la eligieras a propósito, y el propio modal de captura tapaba el mapa por completo mientras lo llenabas — no había forma de confirmar qué punto se iba a usar. **Corregido:** agregué un botón "🎯 Elegir Zona en el Mapa" en ambos modales que oculta el formulario un instante, te deja tocar el punto exacto en el mapa (con un marcador y un círculo de radio como vista previa), y vuelve a mostrar el formulario ya con la zona confirmada.
+- El modal "Nuevo Aviso" no tenía ningún selector de tipo de alerta (solo título/mensaje/radio/estado). **Agregado.**
+- El "Modo Pincel" siempre elegía la categoría al azar sin poder elegirla. **Agregado un selector** junto al botón.
+
+### 24. Botones que se cortan o no se ven en celular
+
+- El header del panel de admin (selector de vistas + "Inyector Masivo"/"Audio"/"Nuevo Aviso"/enlace a la app) nunca tuvo ninguna regla para móvil: en pantallas angostas esos ~9 elementos simplemente se salían del viewport, sin scroll para alcanzarlos. **Corregido:** en móvil el header pasa a 2 filas (marca arriba, acciones abajo) con scroll horizontal.
+- Los botones "🔥 Capa de Calor" y "🛡️ Puntos Seguros" de la app ciudadana estaban en un contenedor que se ocultaba por completo en móvil, sin ningún reemplazo — en celular esos dos botones directamente no existían. **Corregido:** se reubicaron compactos en la esquina del mapa (se ocultó solo la píldora informativa de "Ruta Segura" para no competir por espacio).
+- El segmentador de estado de la cola de incidentes del admin (Activas/Patrulladas/Sondeo/Todas) podía recortar su último botón en pantallas muy angostas por el clásico problema de `flex:1` + texto sin salto de línea. **Corregido con scroll horizontal.**
+- `admin.html` y `login.html` no tenían `viewport-fit=cover` en el `<meta viewport>` (index.html sí), por lo que el margen de seguridad para el "notch"/barra inferior de iPhones no se aplicaba de verdad. **Agregado.**
+
+### Resumen de archivos tocados en esta tercera ronda
+
+`js/firebaseAuth.js` (sync de usuarios a la nube), `js/bundle.js` (ubicación de reporte separada del GPS en vivo + indicador visual, chat con citizenUid + sync de usuarios/chat a la nube, decaimiento de incidentes empuja a la nube), `js/admin-bundle.js` (sync de usuarios/broadcasts/chat en tiempo real, chat 1 a 1 real, categorías ACCIDENT/VANDALISM, selector explícito de zona con vista previa en el mapa, `deleteIncidentFromCloud`), `js/chatService.js` (rediseño: Firestore real, hilos por ciudadano, respuestas dirigidas), `index.html` (indicador de ubicación de reporte), `admin.html` (selector de categoría en Avisos, botones "Elegir Zona", categoría en Modo Pincel, filtros Accidente/Vandalismo, `viewport-fit=cover`), `login.html` (`viewport-fit=cover`), `css/styles.css` (botones de capas visibles en móvil, estilo del indicador de ubicación), `css/admin.css` (header responsive con scroll, segmentador de estado responsive, estilos del selector de zona).
+
+### Qué no se pudo probar en vivo
+
+No tuve acceso a un navegador ni a un dispositivo real en este entorno — validé todo leyendo el código al detalle y verificando la coherencia estructural de cada archivo modificado. Te recomiendo probar, idealmente desde dos dispositivos distintos: iniciar sesión con una cuenta nueva y confirmar que aparece de inmediato en el Directorio del admin; dejar una alerta pasar los 8 minutos y confirmar que se ve amarilla y se queda así; reportar tocando un punto lejano del mapa desde el celular; escribir a soporte desde el celular y responder desde el admin (debe llegarte solo a ti); y enviar un Aviso de Zona eligiendo el punto exacto en el mapa.

@@ -258,7 +258,12 @@
     FIGHT: { id: 'FIGHT', name: 'Riña / Pelea', icon: '⚔️', defaultSeverity: 'HIGH' },
     ROBBERY: { id: 'ROBBERY', name: 'Robo / Asalto', icon: '🚨', defaultSeverity: 'CRITICAL' },
     MEDICAL: { id: 'MEDICAL', name: 'Emergencia Médica', icon: '🚑', defaultSeverity: 'HIGH' },
-    SUSPICIOUS: { id: 'SUSPICIOUS', name: 'Actividad Sospechosa', icon: '👁️', defaultSeverity: 'MEDIUM' }
+    SUSPICIOUS: { id: 'SUSPICIOUS', name: 'Actividad Sospechosa', icon: '👁️', defaultSeverity: 'MEDIUM' },
+    // Sincronizadas con js/bundle.js (lado ciudadano): sin estas dos, un incidente ACCIDENT/VANDALISM
+    // elegido a propósito en el Inyector Masivo o el Modo Pincel se mostraba mal etiquetado como "Riña/Pelea"
+    // en el mapa y la cola del admin, y quedaba invisible en los filtros de categoría.
+    ACCIDENT: { id: 'ACCIDENT', name: 'Accidente de Tránsito', icon: '💥', defaultSeverity: 'HIGH' },
+    VANDALISM: { id: 'VANDALISM', name: 'Vandalismo / Daño', icon: '🔨', defaultSeverity: 'MEDIUM' }
   };
 
   class SwarmEngine {
@@ -421,6 +426,10 @@
           inc.coolingStartedAt = now;
           inc.updatedAt = now;
           active.push(inc);
+          // Empuja la degradación a la nube: si no se guarda aquí, el próximo snapshot de Firestore
+          // (que sigue creyendo que el incidente está en CRITICAL_SWARM) revierte este cambio visual
+          // en cualquier dispositivo conectado, dando la sensación de que "hay que recargar" para verlo.
+          try { firebaseSync.saveIncidentToCloud(inc); } catch (e) {}
           return;
         }
 
@@ -439,6 +448,9 @@
               timeOfDay: new Date(inc.createdAt).getHours() >= 19 || new Date(inc.createdAt).getHours() <= 5 ? 'NIGHT' : 'DAY'
             });
             this.recordDismissedId(inc.id);
+            // Borra el documento en Firestore para que TODOS los dispositivos dejen de verlo activo de
+            // inmediato, en vez de depender de que cada uno calcule por su cuenta el mismo vencimiento.
+            try { firebaseSync.deleteIncidentFromCloud(inc.id); } catch (e) {}
             return;
           }
         }
@@ -447,6 +459,7 @@
         if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > this.COOLING_YELLOW_DURATION_MS) {
           changed = true;
           this.recordDismissedId(inc.id);
+          try { firebaseSync.deleteIncidentFromCloud(inc.id); } catch (e) {}
           return;
         }
 
@@ -589,8 +602,8 @@
       return { incident: resultIncident, isEscalated };
     }
 
-    sendBroadcastAlert({ title, message, radiusMeters = null, centerLat = null, centerLng = null, active = true }) {
-      const bc = { id: 'bc_' + Date.now(), title, message, radiusMeters, centerLat, centerLng, active, timestamp: Date.now() };
+    sendBroadcastAlert({ title, message, category = 'GENERAL', radiusMeters = null, centerLat = null, centerLng = null, active = true }) {
+      const bc = { id: 'bc_' + Date.now(), title, message, category, radiusMeters, centerLat, centerLng, active, timestamp: Date.now() };
       syncBus.emit('COMMUNITY_BROADCAST', bc);
       return bc;
     }
@@ -822,6 +835,56 @@
       this._paintLastPointAt = now;
       if (typeof onPaintPoint === 'function') onPaintPoint(latlng);
     }
+
+    /**
+     * Selector explícito de "zona" para Avisos/Inyector Masivo: un solo clic/toque sobre el mapa fija el
+     * centro (en vez de usar en silencio el centro actual del viewport, que el despachador no elegía a
+     * propósito). Usa el evento 'click' de Leaflet (no mousedown/mousemove como el Modo Pincel), que sí
+     * funciona igual con mouse y con toque táctil.
+     */
+    setZonePickMode(active, onPick) {
+      if (!this.map) return;
+      const container = this.map.getContainer();
+      if (this._zonePickHandler) {
+        this.map.off('click', this._zonePickHandler);
+        this._zonePickHandler = null;
+      }
+      if (active) {
+        if (container) container.style.cursor = 'crosshair';
+        this._zonePickHandler = (e) => {
+          if (container) container.style.cursor = '';
+          this._zonePickHandler = null;
+          if (typeof onPick === 'function') onPick(e.latlng);
+        };
+        this.map.once('click', this._zonePickHandler);
+      } else if (container) {
+        container.style.cursor = '';
+      }
+    }
+
+    showZonePreview(lat, lng, radiusMeters) {
+      this.clearZonePreview();
+      if (!this.map || !window.L) return;
+      this._zoneMarker = L.marker([lat, lng], {
+        icon: L.divIcon({ className: 'zone-pick-marker', html: '🎯', iconSize: [26, 26], iconAnchor: [13, 13] })
+      }).addTo(this.map);
+      this._zoneCircle = L.circle([lat, lng], {
+        radius: radiusMeters || 300,
+        color: '#00d2ff',
+        weight: 2,
+        fillColor: '#00d2ff',
+        fillOpacity: 0.12
+      }).addTo(this.map);
+    }
+
+    updateZonePreviewRadius(radiusMeters) {
+      if (this._zoneCircle) this._zoneCircle.setRadius(radiusMeters);
+    }
+
+    clearZonePreview() {
+      if (this._zoneMarker) { this.map.removeLayer(this._zoneMarker); this._zoneMarker = null; }
+      if (this._zoneCircle) { this.map.removeLayer(this._zoneCircle); this._zoneCircle = null; }
+    }
   }
 
   // --- 4.5. FIREBASE REAL-TIME CLOUD SYNCHRONIZER (PLAN SPARK) ---
@@ -875,13 +938,31 @@
         swarmEngine.incidents = cloudIncidents;
         localStorage.setItem(swarmEngine.STORAGE_KEY_INCIDENTS, JSON.stringify(cloudIncidents));
         syncBus.emit('INCIDENT_MUTATION', { action: 'CLOUD_SYNC', count: cloudIncidents.length });
-      });
+      }, (err) => console.warn('Incidents cloud sync error:', err));
+
+      // Avisos de Zona en tiempo real: antes esto se leía solo con un .get() de una sola vez cada
+      // que el admin abría la pestaña "Avisos de Zona", así que un aviso creado por OTRO despachador
+      // (u otro dispositivo) no aparecía hasta reabrir esa pestaña o recargar la página.
+      this._cachedBroadcasts = null;
+      this.db.collection('broadcasts').orderBy('timestamp', 'desc').limit(50).onSnapshot((snapshot) => {
+        const list = [];
+        snapshot.forEach(doc => list.push({ ...doc.data(), id: doc.id }));
+        this._cachedBroadcasts = list;
+        syncBus.emit('BROADCASTS_UPDATED', { count: list.length });
+      }, (err) => console.warn('Broadcasts cloud sync error:', err));
     }
 
     async saveIncidentToCloud(incident) {
       if (!this.isConfigured || !this.db || !incident) return;
       try {
         await this.db.collection('incidents').doc(incident.id).set(incident, { merge: true });
+      } catch (e) {}
+    }
+
+    async deleteIncidentFromCloud(id) {
+      if (!this.isConfigured || !this.db || !id) return;
+      try {
+        await this.db.collection('incidents').doc(id).delete();
       } catch (e) {}
     }
 
@@ -903,6 +984,11 @@
     }
 
     async getBroadcastsFromCloud() {
+      // Preferir la caché en vivo del listener onSnapshot (ver listenToCloudChanges) para que la lista
+      // siempre refleje avisos creados por otros despachadores/dispositivos sin depender de un reload.
+      if (this._cachedBroadcasts !== null && this._cachedBroadcasts !== undefined) {
+        return this._cachedBroadcasts;
+      }
       if (this.isConfigured && this.db) {
         try {
           const snap = await this.db.collection('broadcasts').orderBy('timestamp', 'desc').limit(50).get();
@@ -1037,6 +1123,8 @@
       this.queueStatusFilter = 'ACTIVE_CRITICAL'; // Default to active/critical as requested by user!
       this.userRoleFilter = 'ALL';
       this.chatRoleFilter = 'ALL';
+      this.activeDirectChatUid = null; // uid del ciudadano seleccionado en "Directorio por Roles" (chat 1 a 1)
+      this.selectedZoneCenter = null; // {lat,lng} elegido a propósito en el mapa para Avisos/Inyector Masivo
       this.selectedUserForModeration = null;
       this.mobileView = 'map'; // 'map' or 'queue'
       this.currentView = 'radar'; // 'radar', 'users', 'broadcasts', 'chat'
@@ -1047,6 +1135,11 @@
     init() {
       try { firebaseSync.init(); } catch (e) { console.warn('Sync init warning:', e); }
       try { firebaseAuth.init(); } catch (e) { console.warn('Auth init warning:', e); }
+      try { firebaseAuth.initUsersCloudSync(); } catch (e) { console.warn('Users cloud sync init warning:', e); }
+      try { if (window.chatService) window.chatService.initCloudSync(); } catch (e) { console.warn('Chat cloud sync init warning:', e); }
+      window.addEventListener('colmena:users-directory-updated', () => {
+        if (window.dispatcherApp) { try { window.dispatcherApp.renderUsersDirectory(); } catch (e) {} }
+      });
       try { this.tacticalMap = new AdminMap('admin-map'); } catch (e) { console.error('AdminMap init error:', e); }
       try { this.setupEventListeners(); } catch (e) { console.error('setupEventListeners error:', e); }
       try { this.renderMetrics(); } catch (e) { console.error('renderMetrics error:', e); }
@@ -1287,6 +1380,12 @@
         this.renderIncidentQueue();
         this.renderMetrics();
       });
+
+      // Refresca la lista de Avisos de Zona sola cuando llega un cambio de la nube (otro despachador
+      // creó/activó/desactivó un aviso), sin depender de reabrir la pestaña o recargar la página.
+      syncBus.on('BROADCASTS_UPDATED', () => {
+        try { this.renderBroadcastsList(); } catch (e) {}
+      });
     }
 
     renderMetrics() {
@@ -1484,27 +1583,76 @@
       }
     }
 
+    /**
+     * Refleja en ambos modales (Nuevo Aviso / Inyector Masivo) si ya se eligió una zona a propósito
+     * en el mapa, o si por defecto se va a usar el centro actual del viewport del mapa táctico.
+     */
+    updateZoneReadouts() {
+      const has = !!this.selectedZoneCenter;
+      const text = has
+        ? `🎯 Zona elegida: [${this.selectedZoneCenter.lat.toFixed(4)}, ${this.selectedZoneCenter.lng.toFixed(4)}] (clic para re-elegir)`
+        : 'Usando el centro actual del mapa táctico (clic para elegir un punto exacto)';
+      ['broadcast-zone-readout', 'bulk-zone-readout'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = text;
+        el.classList.toggle('zone-picked', has);
+      });
+    }
+
+    /** Centro real a usar: la zona elegida a mano si existe, o el centro visible del mapa como respaldo. */
+    getZoneCenter() {
+      if (this.selectedZoneCenter) return this.selectedZoneCenter;
+      const c = (this.tacticalMap && this.tacticalMap.map) ? this.tacticalMap.map.getCenter() : geoResolver.currentCoords;
+      return { lat: c.lat, lng: c.lng };
+    }
+
+    /**
+     * Activa el modo "elegir zona": oculta temporalmente el modal (que hasta ahora tapaba el mapa por
+     * completo mientras se componía el aviso) para que el despachador pueda ver y tocar el mapa, y lo
+     * vuelve a mostrar automáticamente en cuanto elige el punto, ya con la zona confirmada.
+     */
+    beginZonePick(modalEl, radiusInputId) {
+      if (!this.tacticalMap || !this.tacticalMap.map) return;
+      if (modalEl) modalEl.classList.add('hidden');
+      this.tacticalMap.setZonePickMode(true, (latlng) => {
+        this.selectedZoneCenter = { lat: latlng.lat, lng: latlng.lng };
+        const radius = parseInt(document.getElementById(radiusInputId)?.value || '300', 10);
+        this.tacticalMap.showZonePreview(latlng.lat, latlng.lng, radius);
+        this.updateZoneReadouts();
+        if (modalEl) modalEl.classList.remove('hidden');
+      });
+    }
+
     setupBroadcastModal() {
       const modal = document.getElementById('admin-broadcast-modal');
       document.getElementById('btn-open-broadcast')?.addEventListener('click', () => {
         sounds.playClick();
         modal.classList.remove('hidden');
+        this.updateZoneReadouts();
       });
       document.getElementById('btn-close-broadcast')?.addEventListener('click', () => {
         modal.classList.add('hidden');
       });
+      document.getElementById('btn-open-broadcast-zone-pick')?.addEventListener('click', () => {
+        sounds.playClick();
+        this.beginZonePick(modal, 'broadcast-radius-select');
+      });
       document.getElementById('btn-send-broadcast')?.addEventListener('click', () => {
         const title = document.getElementById('broadcast-title-input').value.trim() || 'ALERTA OFICIAL';
         const msg = document.getElementById('broadcast-message-input').value.trim();
+        const category = document.getElementById('broadcast-category-select')?.value || 'GENERAL';
         const radiusMeters = parseInt(document.getElementById('broadcast-radius-select')?.value || '1000', 10);
         const active = (document.getElementById('broadcast-status-select')?.value || 'active') === 'active';
-        // Perímetro centrado en el punto que el despachador está viendo en el mapa táctico (o su GPS si el mapa aún no cargó)
-        const center = (this.tacticalMap && this.tacticalMap.map) ? this.tacticalMap.map.getCenter() : geoResolver.currentCoords;
+        // Perímetro centrado en la zona que el despachador eligió a propósito en el mapa (o, si no eligió
+        // ninguna, en el centro actual del mapa táctico como respaldo).
+        const center = this.getZoneCenter();
         if (msg) {
           sounds.playCriticalAlarm();
-          const payload = { title, message: msg, radiusMeters, centerLat: center.lat, centerLng: center.lng, active };
+          const payload = { title, message: msg, category, radiusMeters, centerLat: center.lat, centerLng: center.lng, active };
           swarmEngine.sendBroadcastAlert(payload);
           firebaseSync.sendBroadcastToCloud(payload);
+          if (this.tacticalMap) this.tacticalMap.clearZonePreview();
           modal.classList.add('hidden');
         }
       });
@@ -1544,7 +1692,10 @@
         paintBtn.innerHTML = paintModeOn ? '✅ Pintando (clic para detener)' : '🖌️ Modo Pincel';
         if (!this.tacticalMap) return;
         this.tacticalMap.setPaintMode(paintModeOn, (latlng) => {
-          const category = paintCategories[Math.floor(Math.random() * paintCategories.length)];
+          const selectedPaintCategory = document.getElementById('paint-category-select')?.value || 'RANDOM';
+          const category = (selectedPaintCategory === 'RANDOM')
+            ? paintCategories[Math.floor(Math.random() * paintCategories.length)]
+            : selectedPaintCategory;
           const res = swarmEngine.reportIncident({
             lat: latlng.lat,
             lng: latlng.lng,
@@ -1948,6 +2099,7 @@
           btn.classList.add('active');
           const channel = btn.dataset.channel;
           if (window.chatService) window.chatService.selectChannel(channel);
+          this.activeDirectChatUid = null; // Salir del chat 1 a 1 con un ciudadano específico
           this.updateAdminChatHeader(channel);
           this.renderAdminChat();
         });
@@ -1975,18 +2127,30 @@
         const text = chatInput?.value.trim();
         if (!text) return;
         const selectedPriority = document.querySelector('input[name="admin-priority"]:checked')?.value || 'NORMAL';
+        const dispatchIdentity = (window.firebaseAuth && window.firebaseAuth.currentUser) || {
+          uid: 'user_admin_super',
+          displayName: 'CENTRAL DE DESPACHO C2',
+          email: 'Gabyolarte2017@gmail.com',
+          role: 'admin',
+          photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=Gaby'
+        };
         if (window.chatService) {
-          window.chatService.sendMessage({
-            text,
-            priority: selectedPriority,
-            currentUser: {
-              uid: 'user_admin_super',
-              displayName: 'CENTRAL DE DESPACHO C2',
-              email: 'Gabyolarte2017@gmail.com',
-              role: 'admin',
-              photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=Gaby'
-            }
-          });
+          if (this.activeDirectChatUid) {
+            // Responder a ESE ciudadano en concreto: el mensaje queda etiquetado con su citizenUid,
+            // así que solo aparece en SU hilo (no en el de otros ciudadanos ni en los canales internos).
+            window.chatService.sendSupportReply({
+              citizenUid: this.activeDirectChatUid,
+              text,
+              priority: selectedPriority,
+              currentUser: dispatchIdentity
+            });
+          } else {
+            window.chatService.sendMessage({
+              text,
+              priority: selectedPriority,
+              currentUser: dispatchIdentity
+            });
+          }
         }
         if (chatInput) chatInput.value = '';
         sounds.playDispatchChime();
@@ -1996,6 +2160,7 @@
       if (window.chatService) {
         window.chatService.onMessage(() => {
           this.renderAdminChat();
+          this.renderAdminChatContacts();
         });
       }
 
@@ -2029,15 +2194,22 @@
     renderAdminChat() {
       const container = document.getElementById('admin-chat-messages-feed');
       if (!container || !window.chatService) return;
-      const messages = window.chatService.getMessagesForCurrentContext('user_admin_super');
+
+      // Modo "Directorio por Roles": conversación 1 a 1 con el ciudadano seleccionado.
+      // Modo canal: transmisión interna compartida (general/emergencias/cuadrante), sin filtrar por persona.
+      const messages = this.activeDirectChatUid
+        ? window.chatService.getMessagesForCitizen(this.activeDirectChatUid)
+        : window.chatService.getMessagesForCurrentContext('user_admin_super');
 
       if (messages.length === 0) {
-        container.innerHTML = '<div style="text-align:center;padding:50px;color:var(--text-muted);font-size:0.85rem;">Canal limpio. Sin transmisiones en esta frecuencia.</div>';
+        container.innerHTML = this.activeDirectChatUid
+          ? '<div style="text-align:center;padding:50px;color:var(--text-muted);font-size:0.85rem;">Sin mensajes todavía con este ciudadano.</div>'
+          : '<div style="text-align:center;padding:50px;color:var(--text-muted);font-size:0.85rem;">Canal limpio. Sin transmisiones en esta frecuencia.</div>';
         return;
       }
 
       container.innerHTML = messages.map(m => {
-        const isSelf = m.senderId === 'user_admin_super' || (m.senderEmail && m.senderEmail.toLowerCase() === 'gabyolarte2017@gmail.com');
+        const isSelf = m.senderRole === 'support' || m.senderId === 'user_admin_super' || m.senderId === 'beja_support_desk' || (m.senderEmail && m.senderEmail.toLowerCase() === 'gabyolarte2017@gmail.com');
         const timeStr = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const isEmergency = m.priority === 'EMERGENCY';
         const isWarning = m.priority === 'WARNING';
@@ -2072,9 +2244,11 @@
       const listEl = document.getElementById('admin-chat-contacts-list');
       if (!listEl || !window.chatService) return;
 
-      const contacts = window.chatService.getContacts(this.chatRoleFilter);
+      // Directorio REAL de ciudadanos que han escrito a soporte (no un contacto fijo/simulado), para que
+      // el despachador pueda elegir a UNA persona específica y responderle solo a ella.
+      const contacts = window.chatService.getCitizenContacts(this.chatRoleFilter);
       if (contacts.length === 0) {
-        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:0.75rem;">Sin contactos para este filtro.</div>';
+        listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:0.75rem;">Ningún ciudadano ha escrito a soporte todavía para este filtro.</div>';
         return;
       }
 
@@ -2082,13 +2256,16 @@
         const isPatrol = c.role === 'patrol';
         const isAdmin = c.role === 'admin';
         const roleLabel = isAdmin ? '🛡️ Super Admin' : (isPatrol ? '🚓 Patrullero' : '👤 Ciudadano');
+        const isActiveChat = this.activeDirectChatUid === c.uid;
+        const preview = (c.lastMessage || '').slice(0, 46);
 
         return `
-          <div class="admin-contact-item" onclick="window.dispatcherApp.openDirectChatAdmin('${c.uid}')">
+          <div class="admin-contact-item ${isActiveChat ? 'active' : ''}" onclick="window.dispatcherApp.openDirectChatAdmin('${c.uid}')">
             <img src="${c.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${c.uid}`}" alt="${c.displayName}" class="admin-contact-avatar">
             <div class="admin-contact-meta">
               <h6>${c.displayName || c.email}</h6>
               <span>${roleLabel} • ⭐ ${c.trustScore || 100} pts</span>
+              ${preview ? `<span style="display:block;opacity:0.7;">${this.escapeHtml(preview)}${(c.lastMessage || '').length > 46 ? '…' : ''}</span>` : ''}
             </div>
             <span style="font-size: 0.9rem; color: var(--color-info);">💬</span>
           </div>
@@ -2098,13 +2275,14 @@
 
     openDirectChatAdmin(uid) {
       if (!window.chatService) return;
-      const contacts = window.chatService.getContacts('ALL');
+      const contacts = window.chatService.getCitizenContacts('ALL');
       const contact = contacts.find(c => c.uid === uid);
       if (contact) {
-        window.chatService.selectDirectContact(contact);
+        this.activeDirectChatUid = uid;
         this.updateAdminChatHeader(null, contact);
         document.querySelectorAll('.admin-chat-channel-item').forEach(b => b.classList.remove('active'));
         this.renderAdminChat();
+        this.renderAdminChatContacts();
       }
     }
 
@@ -2123,6 +2301,7 @@
       openBtn?.addEventListener('click', () => {
         sounds.playClick();
         modal?.classList.remove('hidden');
+        this.updateZoneReadouts();
       });
 
       const closeModal = () => {
@@ -2132,6 +2311,11 @@
 
       closeBtn?.addEventListener('click', closeModal);
 
+      document.getElementById('btn-open-bulk-zone-pick')?.addEventListener('click', () => {
+        sounds.playClick();
+        this.beginZonePick(modal, 'bulk-radius-select');
+      });
+
       executeBtn?.addEventListener('click', async () => {
         sounds.playWarningPing();
         const count = parseInt(document.getElementById('bulk-count-select')?.value || '5', 10);
@@ -2139,7 +2323,8 @@
         const radiusM = parseInt(document.getElementById('bulk-radius-select')?.value || '500', 10);
         const consensusLevel = document.getElementById('bulk-type-select')?.value || 'CRITICAL_SWARM';
 
-        const center = this.tacticalMap?.map?.getCenter() || geoResolver.currentCoords;
+        // Zona que el despachador eligió a propósito en el mapa (o el centro visible del mapa como respaldo).
+        const center = this.getZoneCenter();
         const availableCategories = ['ROBBERY', 'FIGHT', 'SUSPICIOUS', 'VANDALISM', 'ACCIDENT', 'MEDICAL'];
 
         for (let i = 0; i < count; i++) {

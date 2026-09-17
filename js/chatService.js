@@ -11,10 +11,12 @@
   class ChatService {
     constructor() {
       this.STORAGE_KEY_MESSAGES = 'beja_support_messages_v2';
+      this.STORAGE_KEY_GUEST_ID = 'beja_guest_chat_id';
       this.activeChannelId = 'soporte_general'; // 'soporte_general' | 'soporte_tecnico' | 'soporte_emergencias'
       this.activeDirectContact = null; // Siempre canalizado a Soporte Oficial Beja
       this.listeners = [];
       this.broadcastChannel = null;
+      this._cloudSyncStarted = false;
 
       try {
         if (typeof window !== 'undefined' && window.BroadcastChannel) {
@@ -171,6 +173,138 @@
     }
 
     /**
+     * Todos los mensajes de la conversación de UN ciudadano concreto (los que él escribió + las
+     * respuestas de soporte dirigidas a él), sin importar quién los está leyendo. Si se pasa channelId,
+     * además filtra por esa categoría (usado por el propio ciudadano para navegar sus 3 pestañas de tema).
+     */
+    getMessagesForCitizen(citizenUid, channelId = null) {
+      if (!citizenUid) return [];
+      const all = this.getAllMessages();
+      return all
+        .filter(m => m.citizenUid === citizenUid && (!channelId || m.channelId === channelId))
+        .sort((a, b) => a.timestamp - b.timestamp);
+    }
+
+    /**
+     * Directorio REAL de ciudadanos que han escrito a soporte (uno por citizenUid), para que el panel
+     * de CONTROL pueda elegir a una persona específica y responderle. Se enriquece con el directorio de
+     * cuentas (firebaseAuth) cuando existe, y con los propios datos del mensaje para invitados sin cuenta.
+     */
+    getCitizenContacts(roleFilter = 'ALL') {
+      const all = this.getAllMessages();
+      const lastByUid = new Map();
+      all.forEach(m => {
+        if (!m.citizenUid) return;
+        const prev = lastByUid.get(m.citizenUid);
+        if (!prev || m.timestamp > prev.timestamp) lastByUid.set(m.citizenUid, m);
+      });
+
+      const ownMessages = all.filter(m => m.senderId === m.citizenUid);
+      const directory = (window.firebaseAuth && typeof window.firebaseAuth.getUsersList === 'function')
+        ? window.firebaseAuth.getUsersList() : [];
+
+      const contacts = [];
+      lastByUid.forEach((lastMsg, uid) => {
+        const ownLatest = ownMessages.filter(m => m.citizenUid === uid).sort((a, b) => b.timestamp - a.timestamp)[0];
+        const dirUser = directory.find(u => u.uid === uid);
+        const role = (dirUser && dirUser.role) || (ownLatest && ownLatest.senderRole) || 'citizen';
+        if (roleFilter && roleFilter !== 'ALL' && role !== roleFilter) return;
+
+        contacts.push({
+          uid,
+          displayName: (dirUser && dirUser.displayName) || (ownLatest && ownLatest.senderName) || 'Ciudadano',
+          email: (dirUser && dirUser.email) || (ownLatest && ownLatest.senderEmail) || '',
+          photoURL: (dirUser && dirUser.photoURL) || (ownLatest && ownLatest.senderAvatar) || `https://api.dicebear.com/7.x/bottts/svg?seed=${uid}`,
+          role,
+          trustScore: (dirUser && typeof dirUser.trustScore === 'number') ? dirUser.trustScore : 100,
+          lastMessage: lastMsg.text,
+          lastTimestamp: lastMsg.timestamp,
+          lastSenderRole: lastMsg.senderRole
+        });
+      });
+
+      contacts.sort((a, b) => b.lastTimestamp - a.lastTimestamp);
+      return contacts;
+    }
+
+    /**
+     * Suscribe el chat a Firestore (colección 'chat_messages') para que un mensaje escrito en UN
+     * dispositivo (ciudadano o control) llegue en vivo a cualquier otro, sin depender de que compartan
+     * navegador/localStorage. Debe llamarse DESPUÉS de que window.firebaseSync ya exista.
+     */
+    initCloudSync() {
+      if (this._cloudSyncStarted) return;
+      if (!(window.firebaseSync && window.firebaseSync.db)) return;
+      this._cloudSyncStarted = true;
+      try {
+        window.firebaseSync.db.collection('chat_messages').orderBy('timestamp', 'asc').limit(500)
+          .onSnapshot((snapshot) => {
+            const cloudMessages = [];
+            snapshot.forEach(doc => {
+              const data = doc.data() || {};
+              data.id = doc.id;
+              cloudMessages.push(data);
+            });
+
+            // Combina con lo local en vez de reemplazar todo: preserva mensajes puramente locales
+            // (como los de bienvenida, que nunca se suben) mientras la nube manda para todo lo demás.
+            const local = this.getAllMessages();
+            const cloudIds = new Set(cloudMessages.map(m => m.id));
+            const localOnly = local.filter(m => !cloudIds.has(m.id));
+            const merged = [...localOnly, ...cloudMessages].sort((a, b) => a.timestamp - b.timestamp);
+
+            this.saveAllMessages(merged);
+            this.notifyListeners({ action: 'CLOUD_SYNC' });
+          }, (err) => console.warn('Chat cloud sync error:', err));
+      } catch (e) {
+        console.warn('initCloudSync error:', e);
+      }
+    }
+
+    /**
+     * Genera (y recuerda en este navegador) un id estable para invitados sin cuenta, para que sus
+     * mensajes queden agrupados en UNA sola conversación en vez de mezclarse con la de otros invitados.
+     */
+    getOrCreateGuestId() {
+      try {
+        let gid = localStorage.getItem(this.STORAGE_KEY_GUEST_ID);
+        if (!gid) {
+          gid = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+          localStorage.setItem(this.STORAGE_KEY_GUEST_ID, gid);
+        }
+        return gid;
+      } catch (e) {
+        return 'anon';
+      }
+    }
+
+    /**
+     * Guarda un mensaje (del ciudadano o de soporte) localmente, lo difunde a otras pestañas del mismo
+     * navegador, lo sube a Firestore (colección 'chat_messages', 1 documento por mensaje, id compartido
+     * con el local) para que llegue a CUALQUIER dispositivo, y notifica a los listeners de la UI.
+     */
+    _appendMessage(msgObj) {
+      const messages = this.getAllMessages();
+      messages.push(msgObj);
+      this.saveAllMessages(messages);
+
+      if (this.broadcastChannel) {
+        try {
+          this.broadcastChannel.postMessage({ type: 'NEW_CHAT_MESSAGE', message: msgObj });
+        } catch (e) {}
+      }
+
+      if (window.firebaseSync && window.firebaseSync.db) {
+        try {
+          window.firebaseSync.db.collection('chat_messages').doc(msgObj.id).set(msgObj, { merge: true }).catch(() => {});
+        } catch (e) {}
+      }
+
+      this.notifyListeners(msgObj);
+      return msgObj;
+    }
+
+    /**
      * Envía una consulta o ticket a Soporte Beja
      */
     sendMessage({ text, priority = 'NORMAL', currentUser = null }) {
@@ -181,7 +315,7 @@
       let sender = currentUser || (window.firebaseAuth ? window.firebaseAuth.currentUser : null);
       if (!sender) {
         sender = {
-          uid: 'usr_guest_' + (window.syncBus ? window.syncBus.getSenderId() : 'anon'),
+          uid: 'usr_guest_' + this.getOrCreateGuestId(),
           displayName: 'Ciudadano (Consulta)',
           email: 'usuario.soporte@beja.local',
           role: 'citizen',
@@ -192,7 +326,10 @@
       const activeChannel = this.activeChannelId || 'soporte_general';
 
       const userMsgObj = {
-        id: 'ticket_' + now + '_' + Math.random().toString(36).substr(2, 5),
+        id: 'ticket_' + now + '_' + Math.random().toString(36).slice(2, 7),
+        // citizenUid identifica la CONVERSACIÓN (siempre el ciudadano dueño del hilo), tanto en mensajes
+        // que él mismo escribe como en las respuestas de soporte dirigidas a él.
+        citizenUid: sender.uid,
         channelId: activeChannel,
         recipientId: 'beja_support_desk',
         recipientName: 'Mesa de Soporte Beja',
@@ -206,27 +343,46 @@
         timestamp: now
       };
 
-      const messages = this.getAllMessages();
-      messages.push(userMsgObj);
-      this.saveAllMessages(messages);
+      this._appendMessage(userMsgObj);
 
-      // Difundir en vivo a otras pestañas/ventanas y al bus
-      if (this.broadcastChannel) {
-        try {
-          this.broadcastChannel.postMessage({ type: 'NEW_CHAT_MESSAGE', message: userMsgObj });
-        } catch (e) {}
-      }
-
-      if (window.syncBus) {
-        window.syncBus.emit('NEW_CHAT_MESSAGE', { message: userMsgObj });
-      }
-
-      this.notifyListeners(userMsgObj);
-
-      // Disparar respuesta automática inteligente de Soporte Beja
+      // Disparar respuesta automática inmediata de Soporte Beja (mientras un operador humano revisa el ticket)
       this.scheduleSupportAutoReply(userMsgObj, sender);
 
       return userMsgObj;
+    }
+
+    /**
+     * Usada por el panel de CONTROL para responder a un ciudadano ESPECÍFICO (no a un canal compartido).
+     * El mensaje queda etiquetado con el citizenUid del destinatario, así que solo aparece en SU hilo.
+     */
+    sendSupportReply({ citizenUid, text, priority = 'NORMAL', currentUser = null }) {
+      if (!citizenUid || !text || text.trim() === '') return null;
+      const now = Date.now();
+
+      const staffUser = currentUser || (window.firebaseAuth ? window.firebaseAuth.currentUser : null) || {};
+      // Responder en el mismo canal/categoría en que el ciudadano escribió por última vez, si se conoce.
+      const priorMsgs = this.getMessagesForCitizen(citizenUid);
+      const lastCitizenMsg = [...priorMsgs].reverse().find(m => m.senderId === citizenUid);
+
+      const replyObj = {
+        id: 'rep_' + now + '_' + Math.random().toString(36).slice(2, 7),
+        citizenUid,
+        channelId: (lastCitizenMsg && lastCitizenMsg.channelId) || 'soporte_general',
+        recipientId: citizenUid,
+        recipientName: (lastCitizenMsg && lastCitizenMsg.senderName) || 'Ciudadano',
+        senderId: staffUser.uid || 'beja_support_desk',
+        senderName: staffUser.displayName || 'Central de Despacho C2',
+        senderEmail: staffUser.email || 'soporte@beja.local',
+        // Se marca 'support' (no el rol real del staff) para que tanto el ciudadano como el propio panel
+        // de control reconozcan este mensaje como una respuesta OFICIAL de soporte al renderizarlo.
+        senderRole: 'support',
+        senderAvatar: staffUser.photoURL || 'assets/logo.svg',
+        priority: (priority || 'NORMAL').toUpperCase(),
+        text: text.trim(),
+        timestamp: now
+      };
+
+      return this._appendMessage(replyObj);
     }
 
     /**
@@ -252,7 +408,8 @@
       setTimeout(() => {
         const replyNow = Date.now();
         const replyObj = {
-          id: 'rep_' + replyNow + '_' + Math.random().toString(36).substr(2, 5),
+          id: 'rep_' + replyNow + '_' + Math.random().toString(36).slice(2, 7),
+          citizenUid: userMsg.citizenUid || userMsg.senderId,
           channelId: userMsg.channelId,
           recipientId: userMsg.senderId,
           recipientName: userMsg.senderName,
@@ -266,25 +423,11 @@
           timestamp: replyNow
         };
 
-        const currentMsgs = this.getAllMessages();
-        currentMsgs.push(replyObj);
-        this.saveAllMessages(currentMsgs);
-
-        if (this.broadcastChannel) {
-          try {
-            this.broadcastChannel.postMessage({ type: 'NEW_CHAT_MESSAGE', message: replyObj });
-          } catch (e) {}
-        }
-
-        if (window.syncBus) {
-          window.syncBus.emit('NEW_CHAT_MESSAGE', { message: replyObj });
-        }
+        this._appendMessage(replyObj);
 
         if (window.Colmena && window.Colmena.sounds) {
           try { window.Colmena.sounds.playChime(); } catch(e) {}
         }
-
-        this.notifyListeners(replyObj);
       }, 1200 + Math.random() * 800);
     }
 
