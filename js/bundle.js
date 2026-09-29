@@ -2353,13 +2353,13 @@
 
       if (badge) {
         if (isOnline) {
-          badge.innerHTML = '☁️ Nube Activa';
+          badge.innerHTML = '☁️<span class="pill-label"> Nube Activa</span>';
           badge.title = 'Conectado a Google Firebase Firestore (Sincronización en Tiempo Real)';
           badge.style.background = 'rgba(0, 245, 160, 0.15)';
           badge.style.borderColor = 'var(--color-safe)';
           badge.style.color = 'var(--color-safe)';
         } else {
-          badge.innerHTML = '📍 Modo Local';
+          badge.innerHTML = '📍<span class="pill-label"> Modo Local</span>';
           badge.title = 'Funcionando en almacenamiento local. Configura tus claves de Firebase en js/firebase-config.js para sincronizar entre celulares.';
           badge.style.background = 'rgba(255, 255, 255, 0.08)';
           badge.style.borderColor = 'var(--border-glass)';
@@ -2854,6 +2854,8 @@
           }
           this.updateGpsBadge(isGps);
           this.updateOriginAddressUI(this.originCoords.lat, this.originCoords.lng);
+          // La tarjeta de "Atención Preventiva" depende de tu posición: se recalcula al moverte.
+          this.updateFloatingIncidentCard();
         });
       } catch (e) { console.warn('GeoResolver subscribe warning:', e); }
 
@@ -3243,6 +3245,10 @@
         `;
       }
 
+      // Solo el administrador puede elegir un punto del mapa y reportar ahí. Los ciudadanos reportan
+      // únicamente con el botón SOS, que siempre usa su ubicación GPS real.
+      const canReportOnMap = !!(this.currentUser && this.currentUser.role === 'admin');
+
       const popupHtml = `
         <div class="tactical-popup">
           <div class="popup-header">
@@ -3258,27 +3264,37 @@
             <p style="font-size:0.68rem;color:var(--text-dim);margin-top:6px;">
               📍 Coordenadas: ${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}
             </p>
+            ${canReportOnMap ? `
             <div style="margin-top:8px;">
               <button class="btn-popup-trigger-sos" id="btn-popup-report-here" style="width:100%;background:linear-gradient(135deg,#ff436e,#d80032);color:#fff;border:none;padding:6px 10px;border-radius:var(--radius-sm);font-size:0.75rem;font-weight:700;cursor:pointer;">
                 🚨 Reportar Incidente en este Punto
               </button>
-            </div>
+            </div>` : ''}
           </div>
         </div>
       `;
 
       if (this.riskMap && this.riskMap.map && window.L) {
-        window.L.popup({ className: 'tactical-radar-popup' })
+        // En móvil la barra de capas (arriba) y los controles verticales (derecha) tapaban el popup:
+        // se reserva ese espacio para que el auto-pan lo deje siempre completamente visible.
+        const isMobile = window.innerWidth < 900;
+        window.L.popup({
+          className: 'tactical-radar-popup',
+          maxWidth: Math.min(300, window.innerWidth - (isMobile ? 90 : 60)),
+          autoPanPaddingTopLeft: isMobile ? [12, 64] : [20, 70],
+          autoPanPaddingBottomRight: isMobile ? [64, 24] : [70, 30]
+        })
           .setLatLng(latlng)
           .setContent(popupHtml)
           .openOn(this.riskMap.map);
 
+        if (!canReportOnMap) return;
+
         setTimeout(() => {
           document.getElementById('btn-popup-report-here')?.addEventListener('click', () => {
             sounds.playWarningPing();
-            if (!this.currentUser) {
-              this.showToast('🔒 Acceso Restringido: Inicia sesión con tu cuenta de ciudadano para reportar o registrar eventos.', 'warning');
-              document.getElementById('marketing-login-modal')?.classList.remove('hidden');
+            if (!this.currentUser || this.currentUser.role !== 'admin') {
+              this.showToast('🔒 Solo el administrador puede reportar desde el mapa. Usa el botón SOS.', 'warning');
               return;
             }
             // Ubicación elegida a propósito por el ciudadano para ESTE reporte. Se guarda aparte de
@@ -3340,31 +3356,30 @@
       }
     }
 
+    /**
+     * La tarjeta flotante solo se muestra cuando estás DENTRO de una zona con alerta (radio de 200m
+     * alrededor de un incidente activo o de un punto caliente histórico) y estás viendo el mapa.
+     * En cualquier otro caso se oculta para no tapar el mapa.
+     */
+    syncFloatingCardVisibility() {
+      const floatingCard = document.getElementById('floating-incident-card');
+      if (!floatingCard) return;
+      const onMapTab = !!document.getElementById('tab-map')?.classList.contains('active');
+      floatingCard.classList.toggle('hidden', !(this.hasNearbyAlert && onMapTab));
+    }
+
     updateFloatingIncidentCard() {
       try {
-        const incidents = swarmEngine.loadIncidents();
+        const incidents = swarmEngine.loadIncidents() || [];
         const titleEl = document.getElementById('floating-incident-title');
         const timeEl = document.getElementById('floating-incident-time');
         const subEl = document.getElementById('floating-incident-subtitle');
         const badgeEl = document.getElementById('floating-incident-badge');
         const iconEl = document.getElementById('floating-incident-icon');
-        const etaEl = document.getElementById('floating-route-eta');
         const sectorEl = document.getElementById('badge-sector-text');
 
         if (sectorEl && this.userCoords) {
           sectorEl.textContent = 'Cuadrante Activo';
-        }
-
-        if (!incidents || incidents.length === 0) {
-          if (titleEl) titleEl.textContent = 'Cuadrante Seguro';
-          if (timeEl) timeEl.textContent = 'activo';
-          if (subEl) subEl.textContent = 'Sin incidentes activos • Cuadrante vigilado';
-          if (badgeEl) badgeEl.innerHTML = '<span>🛡️ 98% Segura</span>';
-          if (iconEl) iconEl.textContent = '🛡️';
-          if (etaEl) etaEl.textContent = '8m';
-          const distBadge = document.getElementById('floating-dist-badge');
-          if (distBadge) distBadge.textContent = 'OPT';
-          return;
         }
 
         let nearest = null;
@@ -3394,9 +3409,7 @@
                 isHistorical: true,
                 title: pt.name || 'Punto Caliente de Riesgo',
                 description: pt.description || 'Zona con recurrencia registrada.',
-                frequency: pt.frequency || 'Alta',
                 weight: pt.weight || 0.7,
-                reportCount: 1,
                 coolingDown: true
               };
               isHistorical = true;
@@ -3404,70 +3417,45 @@
           });
         }
 
-        if (!nearest) {
-          if (titleEl) titleEl.textContent = 'Cuadrante Seguro';
-          if (timeEl) timeEl.textContent = 'activo';
-          if (subEl) subEl.textContent = 'Sin alertas en un radio de 200m • Cuadrante vigilado';
-          if (badgeEl) {
-            badgeEl.style.background = 'rgba(16, 185, 129, 0.15)';
-            badgeEl.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-            badgeEl.style.color = '#10b981';
-            badgeEl.innerHTML = '<span>🛡️ 98% Segura</span>';
-          }
-          if (iconEl) iconEl.textContent = '🛡️';
-          if (etaEl) etaEl.textContent = '8m';
-          const distBadge = document.getElementById('floating-dist-badge');
-          if (distBadge) distBadge.textContent = 'OPT';
-          return;
-        }
+        this.hasNearbyAlert = !!nearest;
+        this.syncFloatingCardVisibility();
+        if (!nearest) return;
 
-        if (nearest) {
-          const cat = INCIDENT_CATEGORIES[nearest.category] || { name: 'Alerta Comunitaria', icon: '🚨' };
-          const distMeters = Math.round(minDist);
+        const cat = INCIDENT_CATEGORIES[nearest.category] || { name: 'Alerta Comunitaria', icon: '🚨' };
+        const distMeters = Math.round(minDist);
 
-          // Dynamic time calculation
-          const refTime = nearest.criticalStartedAt || nearest.updatedAt || nearest.createdAt || Date.now();
-          const elapsedMin = Math.max(0, Math.floor((Date.now() - refTime) / 60000));
-          const timeStr = isHistorical ? 'Histórico' : (elapsedMin === 0 ? 'hace instantes' : `hace ${elapsedMin}m`);
+        const refTime = nearest.criticalStartedAt || nearest.updatedAt || nearest.createdAt || Date.now();
+        const elapsedMin = Math.max(0, Math.floor((Date.now() - refTime) / 60000));
+        const timeStr = isHistorical ? 'Histórico' : (elapsedMin === 0 ? 'hace instantes' : `hace ${elapsedMin}m`);
 
-          const isCrit = nearest.status === INCIDENT_STATES.CRITICAL_SWARM;
-          if (titleEl) titleEl.textContent = isCrit ? 'Alerta Crítica Cercana' : 'Atención Preventiva';
-          if (timeEl) timeEl.textContent = timeStr;
+        const isCrit = nearest.status === INCIDENT_STATES.CRITICAL_SWARM;
+        if (titleEl) titleEl.textContent = isCrit ? 'Alerta Crítica Cercana' : 'Atención Preventiva';
+        if (timeEl) timeEl.textContent = timeStr;
 
-          const reporterNote = (nearest.reporters && nearest.reporters[0] && nearest.reporters[0].note) 
-            ? nearest.reporters[0].note 
-            : (nearest.title || `${cat.name} reportado en la zona`);
-          if (subEl) subEl.textContent = `${cat.name} • ${reporterNote}`;
-          if (iconEl) iconEl.textContent = cat.icon || '⚠️';
-          if (etaEl) etaEl.textContent = `${Math.max(2, Math.round(distMeters / 60))}m`;
+        const reporterNote = (nearest.reporters && nearest.reporters[0] && nearest.reporters[0].note)
+          ? nearest.reporters[0].note
+          : (nearest.title || `${cat.name} reportado en la zona`);
+        // Evita el texto repetido tipo "Robo / Asalto • Robo / Asalto reportado..."
+        const detail = reporterNote && !reporterNote.startsWith(cat.name) ? `${cat.name} • ${reporterNote}` : reporterNote;
+        if (subEl) subEl.textContent = `${detail} • a ${distMeters}m`;
+        if (iconEl) iconEl.textContent = cat.icon || '⚠️';
 
-          const distBadge = document.getElementById('floating-dist-badge');
-          if (distBadge) distBadge.textContent = `${distMeters}M`;
-          const neighborsText = document.getElementById('cluster-neighbors-text');
-          if (neighborsText) neighborsText.textContent = `${nearest.reportCount || 1} reporte(s) • ${isCrit ? 'Activo' : 'Enfriamiento'}`;
-
-          if (badgeEl) {
-            if (isCrit) {
-              badgeEl.style.background = 'rgba(255, 51, 102, 0.15)';
-              badgeEl.style.borderColor = 'rgba(255, 51, 102, 0.4)';
-              badgeEl.style.color = '#ff3366';
-              badgeEl.innerHTML = '<span>⚠️ Zona Roja (Activa)</span>';
-            } else if (nearest.coolingDown || nearest.status === INCIDENT_STATES.PROBING) {
-              badgeEl.style.background = 'rgba(245, 158, 11, 0.15)';
-              badgeEl.style.borderColor = 'rgba(245, 158, 11, 0.4)';
-              badgeEl.style.color = '#f59e0b';
-              badgeEl.innerHTML = '<span>🟡 Atención Preventiva</span>';
-            } else if (nearest.status === INCIDENT_STATES.PATROL_ATTENDED) {
-              badgeEl.style.background = 'rgba(59, 130, 246, 0.15)';
-              badgeEl.style.borderColor = 'rgba(59, 130, 246, 0.4)';
-              badgeEl.style.color = '#3b82f6';
-              badgeEl.innerHTML = '<span>👮 Cuadrante en Sitio</span>';
-            } else {
-              badgeEl.style.background = 'rgba(16, 185, 129, 0.15)';
-              badgeEl.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-              badgeEl.style.color = '#10b981';
-              badgeEl.innerHTML = '<span>🛡️ 98% Segura</span>';
-            }
+        if (badgeEl) {
+          if (isCrit) {
+            badgeEl.style.background = 'rgba(255, 51, 102, 0.15)';
+            badgeEl.style.borderColor = 'rgba(255, 51, 102, 0.4)';
+            badgeEl.style.color = '#ff3366';
+            badgeEl.innerHTML = '<span>⚠️ Zona Roja</span>';
+          } else if (nearest.status === INCIDENT_STATES.PATROL_ATTENDED) {
+            badgeEl.style.background = 'rgba(59, 130, 246, 0.15)';
+            badgeEl.style.borderColor = 'rgba(59, 130, 246, 0.4)';
+            badgeEl.style.color = '#3b82f6';
+            badgeEl.innerHTML = '<span>👮 Patrulla en sitio</span>';
+          } else {
+            badgeEl.style.background = 'rgba(245, 158, 11, 0.15)';
+            badgeEl.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+            badgeEl.style.color = '#f59e0b';
+            badgeEl.innerHTML = '<span>🟡 Precaución</span>';
           }
         }
       } catch (err) {
@@ -3486,7 +3474,7 @@
 
       // Start with clean map view (drawer collapsed by default)
       if (sidebarPanels) sidebarPanels.classList.add('drawer-collapsed');
-      if (floatingCard) floatingCard.classList.remove('hidden');
+      if (floatingCard) floatingCard.classList.add('hidden');
 
       const switchTab = (target) => {
         sounds.playClick();
@@ -3541,7 +3529,6 @@
 
         if (target === 'map') {
           if (sidebarPanels) sidebarPanels.classList.add('drawer-collapsed');
-          if (floatingCard) floatingCard.classList.remove('hidden');
         } else {
           if (sidebarPanels) sidebarPanels.classList.remove('drawer-collapsed');
           if (floatingCard) floatingCard.classList.add('hidden');
@@ -3554,6 +3541,8 @@
             else drawerTitle.innerHTML = '🛡️ Panel Colmena';
           }
         }
+
+        this.syncFloatingCardVisibility();
 
         if (this.riskMap && this.riskMap.map) {
           setTimeout(() => this.riskMap.map.invalidateSize(), 180);
@@ -3603,15 +3592,6 @@
       document.getElementById('btn-header-bell')?.addEventListener('click', () => {
         sounds.playClick();
         this.showToast('🔔 Red comunitaria San Isidro calibrada. 32 nodos activos en el cuadrante.', 'info');
-      });
-
-      // Floating incident card actions
-      document.getElementById('btn-floating-view-route')?.addEventListener('click', () => {
-        switchTab('routes');
-        document.getElementById('btn-calc-route')?.click();
-      });
-      document.getElementById('btn-floating-notify')?.addEventListener('click', () => {
-        switchTab('report');
       });
 
       // Desktop Map Zoom & Navigation Controls
@@ -3853,8 +3833,9 @@
       const note = noteInput ? noteInput.value.trim() : '';
 
       const reporterUser = this.currentUser;
-      // Prioriza la ubicación que el ciudadano eligió a mano en el mapa; si no eligió ninguna, usa su GPS real.
-      const reportCoords = this.selectedReportCoords || this.userCoords;
+      // Solo el admin puede reportar en un punto elegido en el mapa; cualquier otro usuario reporta en su GPS real.
+      const isAdminReporter = !!(reporterUser && reporterUser.role === 'admin');
+      const reportCoords = (isAdminReporter && this.selectedReportCoords) || this.userCoords;
 
       const { incident, isEscalated } = swarmEngine.reportIncident({
         lat: reportCoords.lat,

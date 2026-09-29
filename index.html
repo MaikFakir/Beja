@@ -17,7 +17,7 @@
   <script src="js/leaflet-heat.js?v=20260929f"></script>
 
   <!-- Application Styles -->
-  <link rel="stylesheet" href="css/styles.css?v=20260929g">
+  <link rel="stylesheet" href="css/styles.css?v=20260929h">
   <link rel="manifest" href="manifest.json">
 </head>
 <body class="citizen-body">
@@ -522,7 +522,7 @@
         <div id="citizen-map"></div>
 
         <!-- Floating Bottom Incident / Smart Avoidance Card (Desktop & Mobile Mockup) -->
-        <div class="floating-incident-card" id="floating-incident-card">
+        <div class="floating-incident-card hidden" id="floating-incident-card" role="status" aria-live="polite">
           <div class="incident-card-content">
             <div class="incident-card-icon-wrap">
               <span class="incident-card-pin-icon" id="floating-incident-icon">⚠️</span>
@@ -538,29 +538,6 @@
             <div class="incident-safety-badge" id="floating-incident-badge">
               <span>🛡️ 98% Segura</span>
             </div>
-          </div>
-
-          <!-- Connected Neighbors & Sensors Cluster Row (Desktop Mockup) -->
-          <div class="incident-cluster-row" id="incident-cluster-row">
-            <div class="avatar-cluster">
-              <div class="cluster-avatar-mini" style="background:#2563eb;">JD</div>
-              <div class="cluster-avatar-mini" style="background:#7c3aed;">MC</div>
-              <span class="cluster-more-badge">+17</span>
-            </div>
-            <div class="cluster-info-text">
-              <strong id="cluster-neighbors-text">18 vecinos atentos</strong>
-              <span>Postes inteligentes activos en el cuadrante</span>
-            </div>
-            <span class="cluster-dist-tag" id="floating-dist-badge">150M</span>
-          </div>
-
-          <div class="incident-card-actions">
-            <button type="button" class="btn-incident-route" id="btn-floating-view-route">
-              <span class="action-icon">🔀</span> Ver ruta segura (<span id="floating-route-eta">12m</span>)
-            </button>
-            <button type="button" class="btn-incident-notify" id="btn-floating-notify">
-              <span class="action-icon">📢</span> Zumbido
-            </button>
           </div>
         </div>
 
@@ -777,6 +754,6 @@
   <script src="js/bogota-historical-data.js?v=20260929f"></script>
 
   <!-- Universal Self-Contained Bundle -->
-  <script src="js/bundle.js?v=20260929g"></script>
+  <script src="js/bundle.js?v=20260929h"></script>
 </body>
 </html>
