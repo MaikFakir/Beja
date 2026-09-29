@@ -3065,38 +3065,132 @@
       }
 
       // Case 2: Normal Radar & Map exploration view -> Inspect quadrant
-      const incidents = swarmEngine.loadIncidents();
-      let nearestInc = null;
-      let minDistance = Infinity;
+      const RADIUS_METERS = 200; // Rango de inspección táctica solicitado por el usuario (200m)
+      const activeIncidents = swarmEngine.loadIncidents() || [];
+      const historyHotspots = swarmEngine.loadHistory() || [];
 
-      incidents.forEach(inc => {
+      // Unificar amenazas activas y focos de calor histórico en el cuadrante
+      const nearbyThreats = [];
+      let minDistance = Infinity;
+      let nearestThreat = null;
+
+      // 1. Evaluar incidentes activos
+      activeIncidents.forEach(inc => {
+        if (inc.status === INCIDENT_STATES.RESOLVED || inc.status === INCIDENT_STATES.FALSE_ALARM) return;
         const d = swarmEngine.calculateDistanceMeters(latlng.lat, latlng.lng, inc.lat, inc.lng);
+        const isCrit = inc.status === INCIDENT_STATES.CRITICAL_SWARM || (inc.reportCount || 0) >= 2;
+        const threatObj = {
+          type: 'ACTIVE',
+          name: inc.title || inc.description || 'Alerta Comunitaria Activa',
+          category: inc.category || 'GENERAL',
+          isCritical: isCrit,
+          weight: isCrit ? 1.0 : 0.75,
+          distance: d,
+          raw: inc
+        };
+        if (d <= RADIUS_METERS) {
+          nearbyThreats.push(threatObj);
+        }
         if (d < minDistance) {
           minDistance = d;
-          nearestInc = inc;
+          nearestThreat = threatObj;
         }
       });
 
-      const isNearThreat = nearestInc && minDistance <= 50;
-      const cat = nearestInc ? (INCIDENT_CATEGORIES[nearestInc.category] || INCIDENT_CATEGORIES.FIGHT) : null;
-      const isCrit = nearestInc && nearestInc.status === INCIDENT_STATES.CRITICAL_SWARM;
+      // 2. Evaluar puntos calientes históricos y mapa de calor
+      historyHotspots.forEach(pt => {
+        const d = swarmEngine.calculateDistanceMeters(latlng.lat, latlng.lng, pt.lat, pt.lng);
+        const freqLower = (pt.frequency || '').toLowerCase();
+        const isCrit = (pt.weight || 0.6) >= 0.85 || freqLower.includes('crític') || freqLower.includes('critic') || freqLower.includes('máxim') || freqLower.includes('maxim');
+        const threatObj = {
+          type: 'HISTORICAL',
+          name: pt.name || 'Punto de Calor / Riesgo',
+          category: pt.category || 'ROBBERY',
+          isCritical: isCrit,
+          weight: pt.weight || 0.65,
+          frequency: pt.frequency || 'Moderada',
+          distance: d,
+          raw: pt
+        };
+        if (d <= RADIUS_METERS) {
+          nearbyThreats.push(threatObj);
+        }
+        if (d < minDistance) {
+          minDistance = d;
+          nearestThreat = threatObj;
+        }
+      });
+
+      // Ordenar amenazas por proximidad
+      nearbyThreats.sort((a, b) => a.distance - b.distance);
+      if (nearbyThreats.length > 0) {
+        nearestThreat = nearbyThreats[0];
+        minDistance = nearestThreat.distance;
+      }
+
+      // 3. Determinar nivel de riesgo: Crítico, Moderado o Seguro
+      const criticalThreats = nearbyThreats.filter(t => t.isCritical || t.weight >= 0.84);
+      const isCriticalZone = criticalThreats.length > 0 && (
+        criticalThreats.some(t => t.distance <= 160) || 
+        criticalThreats.some(t => t.type === 'ACTIVE' && t.isCritical) ||
+        nearbyThreats.length >= 2
+      );
+
+      const isModerateZone = !isCriticalZone && (
+        nearbyThreats.length > 0 || 
+        (nearestThreat && nearestThreat.distance <= 260 && nearestThreat.isCritical)
+      );
+
+      let badgeText = '🟢 Zona Segura';
+      let badgeClass = 'badge-info';
+      let statusHtml = '';
+
+      const catInfo = nearestThreat 
+        ? (INCIDENT_CATEGORIES[nearestThreat.category] || { name: 'Precaución', icon: '⚠️' })
+        : { name: 'General', icon: '🛡️' };
+
+      if (isCriticalZone) {
+        badgeText = '🚨 Zona Crítica';
+        badgeClass = 'badge-critical';
+        const distRounded = Math.round(minDistance);
+        statusHtml = `
+          🚨 <strong>Zona de Alta Concentración • Precaución Extrema</strong><br>
+          Se detectaron <strong>${nearbyThreats.length} foco(s) de riesgo</strong> en un radio de 200m.<br>
+          <span style="color:#ff6b8b;">${catInfo.icon} Foco más cercano:</span> <strong>${nearestThreat?.name || 'Sector Crítico'}</strong> a <strong>${distRounded}m</strong>.<br>
+          <small style="color:#cbd5e1;">Riesgo recurrente en este cuadrante. Transita acompañado y con máxima atención.</small>
+        `;
+      } else if (isModerateZone) {
+        badgeText = '🟡 Zona de Cuidado';
+        badgeClass = 'badge-warning';
+        const distRounded = Math.round(minDistance);
+        statusHtml = `
+          ⚠️ <strong>Zona de Cuidado • Actividad Moderada</strong><br>
+          Cuadrante con antecedentes de incidentes o zona de calor activa en un radio de 200m.<br>
+          <span style="color:#fbbf24;">${catInfo.icon} Punto de referencia:</span> <strong>${nearestThreat?.name || 'Zona con Registro'}</strong> a <strong>${distRounded}m</strong>.<br>
+          <small style="color:#cbd5e1;">Mantén precaución preventiva al transitar por esta calle.</small>
+        `;
+      } else {
+        badgeText = '🟢 Zona Segura';
+        badgeClass = 'badge-info';
+        statusHtml = `
+          🛡️ <strong>Sector Seguro</strong>. No se registran incidentes activos ni focos de calor en un radio de 200m.
+          ${nearestThreat && minDistance < 600 ? `<br><small style="color:var(--text-dim);">${catInfo.icon} Punto de referencia más cercano a ${Math.round(minDistance)}m (${nearestThreat.name}).</small>` : ''}
+        `;
+      }
 
       const popupHtml = `
         <div class="tactical-popup">
           <div class="popup-header">
-            <span class="popup-category">📡 Radar de Cuadrante</span>
-            <span class="popup-badge ${isNearThreat ? (isCrit ? 'badge-critical' : 'badge-warning') : 'badge-info'}">
-              ${isNearThreat ? (isCrit ? '🚨 Zona Crítica' : '🟡 Sondeo Activo') : '🟢 Zona Segura'}
+            <span class="popup-category">📡 Radar de Cuadrante (200m)</span>
+            <span class="popup-badge ${badgeClass}">
+              ${badgeText}
             </span>
           </div>
           <div class="popup-body">
-            <p style="font-size:0.75rem;line-height:1.4;">
-              ${isNearThreat 
-                ? `🚨 <strong>${cat.icon} ${cat.name}</strong> a ${Math.round(minDistance)}m de este punto. Cuadrante con alertas en progreso.`
-                : `🛡️ <strong>Sector Seguro</strong>. No se registran incidentes activos en un radio de 50m.${nearestInc && minDistance < 500 ? `<br><small style="color:var(--text-dim);">Alerta más cercana a ${Math.round(minDistance)}m.</small>` : ''}`
-              }
+            <p style="font-size:0.75rem;line-height:1.45;">
+              ${statusHtml}
             </p>
-            <p style="font-size:0.68rem;color:var(--text-dim);margin-top:4px;">
+            <p style="font-size:0.68rem;color:var(--text-dim);margin-top:6px;">
               📍 Coordenadas: ${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}
             </p>
             <div style="margin-top:8px;">
@@ -3210,13 +3304,57 @@
 
         let nearest = null;
         let minDist = Infinity;
+        let isHistorical = false;
+
         incidents.forEach(inc => {
+          if (inc.status === INCIDENT_STATES.RESOLVED || inc.status === INCIDENT_STATES.FALSE_ALARM) return;
           const d = swarmEngine.calculateDistanceMeters(this.userCoords.lat, this.userCoords.lng, inc.lat, inc.lng);
-          if (d < minDist) {
+          if (d <= 200 && d < minDist) {
             minDist = d;
             nearest = inc;
+            isHistorical = false;
           }
         });
+
+        if (!nearest) {
+          const history = swarmEngine.loadHistory() || [];
+          history.forEach(pt => {
+            const d = swarmEngine.calculateDistanceMeters(this.userCoords.lat, this.userCoords.lng, pt.lat, pt.lng);
+            if (d <= 200 && d < minDist) {
+              minDist = d;
+              nearest = {
+                id: pt.id,
+                category: pt.category || 'ROBBERY',
+                status: (pt.weight >= 0.85) ? INCIDENT_STATES.CRITICAL_SWARM : INCIDENT_STATES.PROBING,
+                isHistorical: true,
+                title: pt.name || 'Punto Caliente de Riesgo',
+                description: pt.description || 'Zona con recurrencia registrada.',
+                frequency: pt.frequency || 'Alta',
+                weight: pt.weight || 0.7,
+                reportCount: 1,
+                coolingDown: true
+              };
+              isHistorical = true;
+            }
+          });
+        }
+
+        if (!nearest) {
+          if (titleEl) titleEl.textContent = 'Cuadrante Seguro';
+          if (timeEl) timeEl.textContent = 'activo';
+          if (subEl) subEl.textContent = 'Sin alertas en un radio de 200m • Cuadrante vigilado';
+          if (badgeEl) {
+            badgeEl.style.background = 'rgba(16, 185, 129, 0.15)';
+            badgeEl.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+            badgeEl.style.color = '#10b981';
+            badgeEl.innerHTML = '<span>🛡️ 98% Segura</span>';
+          }
+          if (iconEl) iconEl.textContent = '🛡️';
+          if (etaEl) etaEl.textContent = '8m';
+          const distBadge = document.getElementById('floating-dist-badge');
+          if (distBadge) distBadge.textContent = 'OPT';
+          return;
+        }
 
         if (nearest) {
           const cat = INCIDENT_CATEGORIES[nearest.category] || { name: 'Alerta Comunitaria', icon: '🚨' };
@@ -3225,7 +3363,7 @@
           // Dynamic time calculation
           const refTime = nearest.criticalStartedAt || nearest.updatedAt || nearest.createdAt || Date.now();
           const elapsedMin = Math.max(0, Math.floor((Date.now() - refTime) / 60000));
-          const timeStr = elapsedMin === 0 ? 'hace instantes' : `hace ${elapsedMin}m`;
+          const timeStr = isHistorical ? 'Histórico' : (elapsedMin === 0 ? 'hace instantes' : `hace ${elapsedMin}m`);
 
           const isCrit = nearest.status === INCIDENT_STATES.CRITICAL_SWARM;
           if (titleEl) titleEl.textContent = isCrit ? 'Alerta Crítica Cercana' : 'Atención Preventiva';
@@ -3233,7 +3371,7 @@
 
           const reporterNote = (nearest.reporters && nearest.reporters[0] && nearest.reporters[0].note) 
             ? nearest.reporters[0].note 
-            : `${cat.name} reportado en la zona`;
+            : (nearest.title || `${cat.name} reportado en la zona`);
           if (subEl) subEl.textContent = `${cat.name} • ${reporterNote}`;
           if (iconEl) iconEl.textContent = cat.icon || '⚠️';
           if (etaEl) etaEl.textContent = `${Math.max(2, Math.round(distMeters / 60))}m`;
