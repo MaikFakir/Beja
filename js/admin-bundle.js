@@ -21,18 +21,29 @@
     getLastKnown() {
       try {
         const raw = localStorage.getItem('colmena_real_user_location');
-        return raw ? JSON.parse(raw) : null;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
+            if (parsed.lat >= 4.3 && parsed.lat <= 5.0 && parsed.lng >= -74.5 && parsed.lng <= -73.8) {
+              return parsed;
+            }
+          }
+        }
+        return null;
       } catch (e) { return null; }
     }
 
     setCoords(lat, lng, isGps = true) {
+      const isBogota = (lat >= 4.3 && lat <= 5.0 && lng >= -74.5 && lng <= -73.8);
       this.currentCoords = { lat, lng };
       this.isRealGps = isGps;
-      try {
-        localStorage.setItem('colmena_real_user_location', JSON.stringify({ lat, lng }));
-      } catch (e) {}
+      if (isBogota) {
+        try {
+          localStorage.setItem('colmena_real_user_location', JSON.stringify({ lat, lng }));
+        } catch (e) {}
+      }
       this.onLocationUpdated.forEach(cb => {
-        try { cb(this.currentCoords, isGps); } catch (err) {}
+        try { cb(this.currentCoords, isGps, isBogota); } catch (err) {}
       });
     }
 
@@ -517,39 +528,44 @@
     }
 
     loadHistory() {
-      let combined = [];
-      if (Array.isArray(this.cloudHistory) && this.cloudHistory.length > 0) {
-        combined = combined.concat(this.cloudHistory);
-      }
+      const seed = this.getInitialHistoricalSeed();
+      const map = new Map();
 
-      let localHistory = [];
+      // 1. Always load baseline Bogota historical hotspots
+      seed.forEach(pt => {
+        if (pt && typeof pt.lat === 'number' && typeof pt.lng === 'number') {
+          const key = pt.id || `${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
+          map.set(key, pt);
+        }
+      });
+
+      // 2. Merge local storage custom/simulated incidents (only valid Bogota points)
       try {
         const raw = localStorage.getItem(this.STORAGE_KEY_HISTORY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length >= 20) {
-            localHistory = parsed;
+          if (Array.isArray(parsed)) {
+            parsed.forEach(pt => {
+              if (pt && typeof pt.lat === 'number' && typeof pt.lng === 'number') {
+                if (pt.lat >= 4.3 && pt.lat <= 5.0 && pt.lng >= -74.5 && pt.lng <= -73.8) {
+                  const key = pt.id || `${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
+                  map.set(key, pt);
+                }
+              }
+            });
           }
         }
       } catch (e) {}
 
-      if (localHistory.length === 0) {
-        const seed = this.getInitialHistoricalSeed();
-        if (seed && seed.length > 0) {
-          localHistory = seed;
-          try { localStorage.setItem(this.STORAGE_KEY_HISTORY, JSON.stringify(seed)); } catch (e) {}
-        }
+      // 3. Merge cloud history from Firestore
+      if (Array.isArray(this.cloudHistory) && this.cloudHistory.length > 0) {
+        this.cloudHistory.forEach(pt => {
+          if (pt && typeof pt.lat === 'number' && typeof pt.lng === 'number') {
+            const key = pt.id || `${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
+            map.set(key, pt);
+          }
+        });
       }
-
-      const map = new Map();
-      localHistory.forEach(pt => {
-        const key = pt.id || `${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
-        map.set(key, pt);
-      });
-      combined.forEach(pt => {
-        const key = pt.id || `${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
-        map.set(key, pt);
-      });
 
       return Array.from(map.values());
     }
@@ -696,9 +712,11 @@
       this.containerId = containerId;
       this.map = null;
       this.markerLayerGroup = null;
+      this.hotspotMarkersLayer = null;
       this.heatLayer = null;
       this.markersMap = new Map();
-      this.center = [geoResolver.currentCoords.lat, geoResolver.currentCoords.lng];
+      this.BOGOTA_CENTER = [4.6350, -74.1100];
+      this.center = this.BOGOTA_CENTER;
       this.categoryFilter = 'ALL';
       this.timeFilter = 'ALL';
       this.hasAutoCentered = false;
@@ -706,8 +724,8 @@
     }
 
     initMap() {
-      if (!window.L) {
-        setTimeout(() => this.initMap(), 300);
+      if (!window.L || !window.L.heatLayer) {
+        setTimeout(() => this.initMap(), 200);
         return;
       }
       const container = document.getElementById(this.containerId);
@@ -716,7 +734,7 @@
       try {
         this.map = L.map(this.containerId, {
           center: this.center,
-          zoom: 15,
+          zoom: 12,
           zoomControl: false,
           attributionControl: false
         });
@@ -733,12 +751,13 @@
         L.control.zoom({ position: 'bottomright' }).addTo(this.map);
 
         this.markerLayerGroup = L.layerGroup().addTo(this.map);
+        this.hotspotMarkersLayer = L.layerGroup().addTo(this.map);
         this.renderHeatmap();
         this.renderActiveIncidents();
 
-        geoResolver.subscribe((coords) => {
-          if (!this.hasAutoCentered && this.map) {
-            this.map.setView([coords.lat, coords.lng], 15);
+        geoResolver.subscribe((coords, isGps, isBogota) => {
+          if (isBogota && !this.hasAutoCentered && this.map) {
+            this.map.setView([coords.lat, coords.lng], 14);
             this.hasAutoCentered = true;
           }
         });
@@ -767,10 +786,19 @@
     }
 
     renderHeatmap() {
-      if (!this.map || !window.L || !window.L.heatLayer) return;
+      if (!this.map) return;
+      if (!window.L || !window.L.heatLayer) {
+        setTimeout(() => this.renderHeatmap(), 250);
+        return;
+      }
       if (this.heatLayer) {
         this.map.removeLayer(this.heatLayer);
         this.heatLayer = null;
+      }
+      if (this.hotspotMarkersLayer) {
+        this.hotspotMarkersLayer.clearLayers();
+      } else {
+        this.hotspotMarkersLayer = L.layerGroup().addTo(this.map);
       }
 
       const history = swarmEngine.loadHistory();
@@ -781,7 +809,44 @@
         const matchesCategory = (this.categoryFilter === 'ALL' || pt.category === this.categoryFilter);
         const matchesTime = (this.timeFilter === 'ALL' || pt.timeOfDay === this.timeFilter || pt.timeOfDay === 'BOTH');
         if (matchesCategory && matchesTime) {
-          points.push([pt.lat, pt.lng, pt.weight || 0.6]);
+          points.push([pt.lat, pt.lng, pt.weight || 0.65]);
+
+          // Also create a visual tactical marker for each historical hotspot
+          const isAccident = pt.category === 'ACCIDENT';
+          const isCritical = (pt.weight || 0.6) >= 0.85 || (pt.frequency && pt.frequency.includes('Crítico'));
+          const fillColor = isAccident ? '#00d2ff' : (isCritical ? '#ff1744' : '#ff9100');
+
+          const marker = L.circleMarker([pt.lat, pt.lng], {
+            radius: isCritical ? 9 : 7,
+            fillColor: fillColor,
+            color: '#ffffff',
+            weight: 1.5,
+            opacity: 0.95,
+            fillOpacity: 0.75,
+            className: 'hotspot-pulse-marker'
+          });
+
+          const timeLabel = pt.timeOfDay === 'DAY' ? '☀️ DÍA (06:00 - 18:00)' : (pt.timeOfDay === 'NIGHT' ? '🌙 NOCHE (18:00 - 05:00)' : '🕒 24 HORAS');
+          const catName = pt.category === 'ACCIDENT' ? '💥 Siniestro Vial' : (pt.category === 'ROBBERY' ? '🚨 Hurto / Asalto' : '⚔️ Riña / Inseguridad');
+
+          marker.bindPopup(`
+            <div style="font-family:system-ui,-apple-system,sans-serif; min-width:230px; color:#f8fafc; line-height:1.4;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span style="background:${isAccident ? '#0284c7' : (isCritical ? '#dc2626' : '#d97706')}; color:#fff; font-size:10px; font-weight:800; padding:2px 7px; border-radius:10px; text-transform:uppercase;">
+                  ${catName}
+                </span>
+                <span style="font-size:10px; color:#94a3b8; font-weight:700;">${timeLabel}</span>
+              </div>
+              <strong style="display:block; font-size:13px; color:#ffffff; margin-bottom:4px;">${pt.name || 'Punto Crítico'}</strong>
+              <p style="font-size:11px; color:#cbd5e1; margin:0 0 8px 0;">${pt.description || 'Punto caliente reportado con recurrencia histórica en Bogotá.'}</p>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; font-size:10px; background:rgba(255,255,255,0.06); padding:5px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.1);">
+                <div><span style="color:#64748b;">Franja:</span> <strong style="color:#f1f5f9;">${pt.hour || 'Todo el día'}</strong></div>
+                <div><span style="color:#64748b;">Frecuencia:</span> <strong style="color:#fbbf24;">${pt.frequency || 'Alta'}</strong></div>
+                <div style="grid-column:span 2;"><span style="color:#64748b;">Localidad:</span> <strong style="color:#38bdf8;">${pt.locality || 'Bogotá D.C.'}</strong></div>
+              </div>
+            </div>
+          `);
+          marker.addTo(this.hotspotMarkersLayer);
         }
       });
 
@@ -796,11 +861,12 @@
 
       if (points.length > 0) {
         this.heatLayer = L.heatLayer(points, {
-          radius: 24,
-          blur: 16,
-          maxZoom: 18,
+          radius: 30,
+          blur: 20,
+          maxZoom: 17,
           max: 1.0,
-          gradient: { 0.2: '#00f5a0', 0.45: '#ffb800', 0.7: '#ff5e3a', 1.0: '#ff1744' }
+          minOpacity: 0.40,
+          gradient: { 0.2: '#00f5a0', 0.45: '#ffb800', 0.70: '#ff5e3a', 0.95: '#ff1744' }
         }).addTo(this.map);
       }
     }
@@ -2120,6 +2186,14 @@
         swarmEngine.reportIncident({ lat: base.lat + 0.001, lng: base.lng - 0.001, category: 'ROBBERY', note: 'Asalto en proceso a transeúnte.', userId: 'botA' });
         await new Promise(r => setTimeout(r, 1500));
         swarmEngine.reportIncident({ lat: base.lat + 0.0013, lng: base.lng - 0.0009, category: 'ROBBERY', note: 'Sujetos armados en fuga.', userId: 'botB' });
+      });
+
+      document.getElementById('admin-focus-bogota')?.addEventListener('click', () => {
+        sounds.playClick();
+        if (this.tacticalMap && this.tacticalMap.map) {
+          this.tacticalMap.map.flyTo([4.6350, -74.1100], 12, { animate: true });
+          this.showToast('🎯 Vista táctica general de Bogotá D.C. (65+ Focos Activos)', 'info');
+        }
       });
 
       document.getElementById('admin-sim-reset')?.addEventListener('click', () => {

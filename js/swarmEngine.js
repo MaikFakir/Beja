@@ -595,25 +595,36 @@ export class SwarmEngine {
   }
 
   loadHistory() {
-    let localHistory = [];
+    const seed = this.getInitialHistoricalSeed();
+    const map = new Map();
+
+    // 1. Always load baseline Bogota historical hotspots
+    seed.forEach(pt => {
+      if (pt && typeof pt.lat === 'number' && typeof pt.lng === 'number') {
+        const key = pt.id || `${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
+        map.set(key, pt);
+      }
+    });
+
+    // 2. Merge local storage custom/simulated incidents (only valid Bogota points)
     try {
       const raw = localStorage.getItem(this.STORAGE_KEY_HISTORY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length >= 20) {
-          localHistory = parsed;
+        if (Array.isArray(parsed)) {
+          parsed.forEach(pt => {
+            if (pt && typeof pt.lat === 'number' && typeof pt.lng === 'number') {
+              if (pt.lat >= 4.3 && pt.lat <= 5.0 && pt.lng >= -74.5 && pt.lng <= -73.8) {
+                const key = pt.id || `${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
+                map.set(key, pt);
+              }
+            }
+          });
         }
       }
     } catch (e) {}
 
-    if (localHistory.length === 0) {
-      const seed = this.getInitialHistoricalSeed();
-      if (seed && seed.length > 0) {
-        localHistory = seed;
-        try { localStorage.setItem(this.STORAGE_KEY_HISTORY, JSON.stringify(seed)); } catch (e) {}
-      }
-    }
-    return localHistory;
+    return Array.from(map.values());
   }
 
   saveHistory() {

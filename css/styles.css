@@ -5307,3 +5307,28 @@ html, body.citizen-body {
   font-weight: 800 !important;
 }
 
+/* Tactical Marked Hotspots Styling (Bogotá Heat Zones) */
+.hotspot-pulse-marker {
+  cursor: pointer;
+  filter: drop-shadow(0 0 6px rgba(255, 23, 68, 0.75));
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), filter 0.2s ease;
+}
+
+.hotspot-pulse-marker:hover {
+  filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.95)) brightness(1.25);
+  transform: scale(1.2);
+}
+
+.leaflet-popup-content-wrapper {
+  background: rgba(11, 17, 33, 0.95) !important;
+  backdrop-filter: blur(14px) !important;
+  -webkit-backdrop-filter: blur(14px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.7) !important;
+}
+
+.leaflet-popup-tip {
+  background: rgba(11, 17, 33, 0.95) !important;
+}
+

@@ -7,10 +7,10 @@
   <meta name="description" content="Beja: Panel de Control Central de Autoridades y Despacho Táctico para incidentes comunitarios detectados en enjambre.">
   <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 
-  <!-- Leaflet & Heatmap CDN (cdnjs fallback) -->
+  <!-- Leaflet & Heatmap (Local Guaranteed Fallback) -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
+  <script src="js/leaflet-heat.js?v=20260929c"></script>
 
   <!-- Admin & Design Styles -->
   <link rel="stylesheet" href="css/styles.css?v=20260917d">
@@ -155,6 +155,7 @@
           <option value="SUSPICIOUS">👁️ Sospechoso</option>
           <option value="VANDALISM">🔨 Vandalismo</option>
         </select>
+        <button class="sim-btn-pill" id="admin-focus-bogota" title="Centrar mapa en Bogotá (Ver Todos los Focos de Calor)" style="color:#00f5a0; border-color:rgba(0,245,160,0.4);">🎯 Ver Bogotá</button>
         <button class="sim-btn-pill" id="admin-sim-reset" style="color: var(--color-critical);">🧹 Reset</button>
       </aside>
     </section>
@@ -526,9 +527,9 @@
   <script src="js/incidentHistory.js?v=20260929b"></script>
 
   <!-- Bogota 5-Year Historical Crime & Accident Georeferenced Dataset -->
-  <script src="js/bogota-historical-data.js?v=20260929b"></script>
+  <script src="js/bogota-historical-data.js?v=20260929c"></script>
 
   <!-- Universal Admin Bundle Script -->
-  <script src="js/admin-bundle.js?v=20260929b"></script>
+  <script src="js/admin-bundle.js?v=20260929c"></script>
 </body>
 </html>

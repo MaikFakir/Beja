@@ -11,10 +11,10 @@
   <meta name="description" content="Beja: Sistema inteligente de detección comunitaria de incidentes por consenso en colmena, mapa de calor y rutas seguras.">
   <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
   
-  <!-- Leaflet CSS & Heatmap Library -->
+  <!-- Leaflet CSS & Heatmap Library (Local Guaranteed Fallback) -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
+  <script src="js/leaflet-heat.js?v=20260929c"></script>
 
   <!-- Application Styles -->
   <link rel="stylesheet" href="css/styles.css?v=20260917d">
@@ -453,13 +453,13 @@
         <div class="floating-sector-badge-container">
           <div class="floating-sector-badge" id="floating-colmena-badge" title="Estado de la Colmena en tu Cuadrante">
             <span class="badge-pulse-dot"></span>
-            <span class="badge-sector-name" id="badge-sector-text">San Isidro</span>
+            <span class="badge-sector-name" id="badge-sector-text">Bogotá D.C.</span>
             <span class="badge-sep">•</span>
             <span class="badge-status-text">COLMENA ACTIVA</span>
             <span class="badge-nodes-count" id="badge-nodes-count">((•)) 32 Nodos</span>
           </div>
           <div class="floating-geo-pill" id="floating-geo-pill">
-            <span id="geo-coords-text">S 12°05'58.2" • W 77°02'11.8"</span>
+            <span id="geo-coords-text">N 4°36'35.0" • W 74°04'54.1"</span>
             <span class="badge-sep">•</span>
             <span class="geo-status-safe">MALLA COMUNITARIA CALIBRADA</span>
           </div>
@@ -502,6 +502,9 @@
               <polyline points="2 17 12 22 22 17"/>
               <polyline points="2 12 12 17 22 12"/>
             </svg>
+          </button>
+          <button type="button" class="vert-tool-btn" id="btn-focus-bogota" title="Centrar mapa en Bogotá (Ver Todos los Focos de Calor)" style="font-size:14px;">
+            🎯
           </button>
 
           <!-- Floating Layer / Time Filter Dropdown Menu -->
@@ -572,7 +575,7 @@
         <div class="desktop-direct-c2-block" id="desktop-direct-c2-block">
           <div class="direct-c2-text-col">
             <span class="direct-c2-label">ENLACE DIRECTO</span>
-            <strong class="direct-c2-target" id="direct-c2-target-name">Serenazgo San Isidro</strong>
+            <strong class="direct-c2-target" id="direct-c2-target-name">Comando Cuadrante MEBOG</strong>
           </div>
           <button type="button" class="desktop-sos-big-btn" id="btn-desktop-sos-fab" title="Disparo Inmediato de Emergencia SOS">
             SOS
@@ -771,9 +774,9 @@
   <script src="js/incidentHistory.js?v=20260929b"></script>
 
   <!-- Bogota 5-Year Historical Crime & Accident Georeferenced Dataset -->
-  <script src="js/bogota-historical-data.js?v=20260929b"></script>
+  <script src="js/bogota-historical-data.js?v=20260929c"></script>
 
   <!-- Universal Self-Contained Bundle -->
-  <script src="js/bundle.js?v=20260929b"></script>
+  <script src="js/bundle.js?v=20260929c"></script>
 </body>
 </html>
