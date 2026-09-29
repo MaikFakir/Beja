@@ -115,77 +115,115 @@
 
   const geoResolver = new GeoResolver();
 
+  // Formatea un resultado GeoJSON de Photon como etiqueta corta legible ("Calle 72, Chapinero, Bogotá").
+  function formatPhotonFeature(f) {
+    const p = (f && f.properties) || {};
+    const street = p.street ? `${p.street}${p.housenumber ? ' # ' + p.housenumber : ''}` : '';
+    const label = p.name || street || p.locality || p.district || p.city || 'Lugar sin nombre';
+    const sub = [p.name && street ? street : '', p.locality || p.district, p.city, p.state]
+      .filter((v, i, arr) => v && v !== label && arr.indexOf(v) === i);
+    return { label, sublabel: sub.join(', ') };
+  }
+
+  // Nominatim bloquea con HTTP 429 las peticiones que llegan desde el dominio de GitHub Pages
+  // (política de uso: máx. 1 petición/segundo y sin consultas automáticas). Por eso Photon (Komoot,
+  // también gratuito, sin API key y sobre datos de OpenStreetMap) es el proveedor principal y
+  // Nominatim queda solo como respaldo. Photon solo acepta lang=default|en|de|fr: con "es"
+  // respondía 400 y el respaldo nunca funcionaba.
+  const reverseGeocodeCache = new Map();
+
   async function reverseGeocode(lat, lng) {
+    const fallback = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    // ~11m de precisión: evita repetir la consulta cuando el GPS apenas cambia.
+    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    if (reverseGeocodeCache.has(key)) return reverseGeocodeCache.get(key);
+
+    let result = null;
     try {
-      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
-      const resp = await fetch(url, { headers: { 'Accept-Language': 'es' } });
+      const resp = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&limit=1`);
       if (resp.ok) {
         const data = await resp.json();
-        if (data.display_name) {
-          const parts = data.display_name.split(',');
-          return parts.slice(0, 3).join(',').trim();
+        const f = data && Array.isArray(data.features) ? data.features[0] : null;
+        if (f) {
+          const { label, sublabel } = formatPhotonFeature(f);
+          result = [label, sublabel.split(', ')[0]].filter(Boolean).join(', ');
         }
       }
     } catch (e) {}
-    return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+
+    if (!result) {
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+        const resp = await fetch(url, { headers: { 'Accept-Language': 'es' } });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.display_name) result = data.display_name.split(',').slice(0, 3).join(',').trim();
+        }
+      } catch (e) {}
+    }
+
+    if (result) {
+      if (reverseGeocodeCache.size > 200) reverseGeocodeCache.clear();
+      reverseGeocodeCache.set(key, result);
+      return result;
+    }
+    return fallback;
   }
 
   /**
-   * Búsqueda de direcciones con dos proveedores 100% gratuitos y sin API key: Nominatim (OSM)
-   * como principal, y Photon (Komoot, también sobre datos de OSM) como respaldo si el primero
-   * falla o no responde. Devuelve un arreglo normalizado, o null si AMBOS proveedores fallan
-   * (para distinguir "sin resultados" de "no se pudo conectar").
+   * Búsqueda de direcciones con dos proveedores 100% gratuitos y sin API key: Photon como
+   * principal y Nominatim como respaldo. Devuelve un arreglo normalizado, o null si AMBOS
+   * proveedores fallan (para distinguir "sin resultados" de "no se pudo conectar").
    */
   async function geocodeAddress(query, biasLat, biasLon) {
-    // 1. Nominatim (principal)
+    const hasBias = typeof biasLat === 'number' && typeof biasLon === 'number' && !isNaN(biasLat) && !isNaN(biasLon);
+    let anyProviderResponded = false;
+
+    // 1. Photon (principal)
     try {
-      const hasBias = typeof biasLat === 'number' && typeof biasLon === 'number' && !isNaN(biasLat) && !isNaN(biasLon);
+      const biasParams = hasBias ? `&lat=${biasLat}&lon=${biasLon}` : '';
+      const resp = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=8${biasParams}`);
+      if (resp.ok) {
+        anyProviderResponded = true;
+        const data = await resp.json();
+        if (data && Array.isArray(data.features)) {
+          let features = data.features.filter(f => f.geometry && Array.isArray(f.geometry.coordinates));
+          // Prioriza resultados en Colombia si los hay (Photon es global).
+          const inCo = features.filter(f => (f.properties || {}).countrycode === 'CO');
+          if (inCo.length > 0) features = inCo;
+          const results = features.slice(0, 5).map(f => {
+            const { label, sublabel } = formatPhotonFeature(f);
+            return { label, sublabel, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] };
+          }).filter(r => !isNaN(r.lat) && !isNaN(r.lon));
+          if (results.length > 0) return results;
+        }
+      }
+    } catch (e) {
+      console.warn('Photon search failed, trying fallback:', e);
+    }
+
+    // 2. Nominatim (respaldo)
+    try {
       const viewbox = hasBias ? `&viewbox=${biasLon - 0.3},${biasLat + 0.3},${biasLon + 0.3},${biasLat - 0.3}` : '';
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1${viewbox}`;
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=co${viewbox}`;
       const resp = await fetch(url, { headers: { 'Accept-Language': 'es' } });
       if (resp.ok) {
+        anyProviderResponded = true;
         const data = await resp.json();
         if (Array.isArray(data)) {
           return data.map(r => ({
             label: r.display_name.split(',')[0],
-            sublabel: r.display_name.split(',').slice(1, 4).join(','),
+            sublabel: r.display_name.split(',').slice(1, 4).join(',').trim(),
             lat: parseFloat(r.lat),
             lon: parseFloat(r.lon)
           })).filter(r => !isNaN(r.lat) && !isNaN(r.lon));
         }
       }
     } catch (e) {
-      console.warn('Nominatim search failed, trying fallback:', e);
+      console.warn('Nominatim search fallback also failed:', e);
     }
 
-    // 2. Photon (respaldo, también gratuito y sin API key)
-    try {
-      const hasBias = typeof biasLat === 'number' && typeof biasLon === 'number' && !isNaN(biasLat) && !isNaN(biasLon);
-      const biasParams = hasBias ? `&lat=${biasLat}&lon=${biasLon}` : '';
-      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5&lang=es${biasParams}`;
-      const resp = await fetch(url);
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data && Array.isArray(data.features)) {
-          return data.features.map(f => {
-            const p = f.properties || {};
-            const coords = f.geometry && f.geometry.coordinates ? f.geometry.coordinates : null;
-            if (!coords) return null;
-            const parts = [p.street, p.city, p.state, p.country].filter(Boolean);
-            return {
-              label: p.name || p.street || 'Lugar sin nombre',
-              sublabel: parts.join(', '),
-              lat: coords[1],
-              lon: coords[0]
-            };
-          }).filter(Boolean);
-        }
-      }
-    } catch (e) {
-      console.warn('Photon search fallback also failed:', e);
-    }
-
-    return null; // Ambos proveedores fallaron (ej. sin conexión)
+    return anyProviderResponded ? [] : null; // null = ningún proveedor respondió (ej. sin conexión)
   }
 
   // Servidores públicos y gratuitos de OSRM (sin API key), en orden de preferencia por modo de viaje.
@@ -204,6 +242,41 @@
       'https://router.project-osrm.org/route/v1/driving'
     ]
   };
+
+  // Traduce una maniobra de OSRM (en inglés: "turn", "sharp right"...) a una indicación en español.
+  const OSRM_MODIFIERS_ES = {
+    'left': 'a la izquierda', 'right': 'a la derecha',
+    'slight left': 'levemente a la izquierda', 'slight right': 'levemente a la derecha',
+    'sharp left': 'cerrado a la izquierda', 'sharp right': 'cerrado a la derecha',
+    'straight': 'derecho', 'uturn': 'en U'
+  };
+  function formatOsrmStep(step, fallbackRoad = 'la vía') {
+    const m = step.maneuver || {};
+    const mod = OSRM_MODIFIERS_ES[m.modifier] || '';
+    const road = step.name ? `<strong>${step.name}</strong>` : fallbackRoad;
+    const dist = step.distance >= 1000 ? `${(step.distance / 1000).toFixed(1)} km` : `${Math.round(step.distance)} m`;
+    switch (m.type) {
+      case 'depart': return `Sal por ${road} (${dist})`;
+      case 'arrive': return '🏁 Llegas a tu destino';
+      case 'turn':
+      case 'end of road':
+        return m.modifier === 'straight' ? `Sigue derecho por ${road} (${dist})` : `Gira ${mod} hacia ${road} (${dist})`;
+      case 'continue':
+      case 'new name':
+        return `Continúa ${mod && m.modifier !== 'straight' ? mod + ' ' : ''}por ${road} (${dist})`;
+      case 'fork': return `En la bifurcación, toma ${mod || 'el carril indicado'} hacia ${road} (${dist})`;
+      case 'merge': return `Incorpórate ${mod} a ${road} (${dist})`;
+      case 'on ramp': return `Toma la entrada ${mod} hacia ${road} (${dist})`;
+      case 'off ramp': return `Toma la salida ${mod} hacia ${road} (${dist})`;
+      case 'roundabout':
+      case 'rotary':
+        return `En la glorieta, toma la ${m.exit ? m.exit + 'ª ' : ''}salida hacia ${road} (${dist})`;
+      case 'exit roundabout':
+      case 'exit rotary':
+        return `Sal de la glorieta hacia ${road} (${dist})`;
+      default: return `Sigue por ${road} (${dist})`;
+    }
+  }
 
   /**
    * Intenta calcular una ruta real (calles reales, no una línea recta) probando varios servidores
@@ -1741,11 +1814,7 @@
         directDuration = r.duration;
         directCoords = r.geometry.coordinates.map(c => [c[1], c[0]]);
         if (r.legs && r.legs[0]?.steps) {
-          directSteps = r.legs[0].steps.map(s => {
-            const modifier = s.maneuver.modifier ? ` (${s.maneuver.modifier})` : '';
-            const roadName = s.name ? `por <strong>${s.name}</strong>` : 'por vía principal';
-            return `${s.maneuver.type}${modifier} ${roadName} (${Math.round(s.distance)} m)`;
-          });
+          directSteps = r.legs[0].steps.map(s => formatOsrmStep(s));
         }
         if (directRoute.routes.length > 1) {
           osrmAlternatives = directRoute.routes.slice(1);
@@ -1770,8 +1839,21 @@
       let hasThreat = false;
       let threatDetails = null;
 
+      // Un foco pegado al origen o al destino no se puede esquivar con ningún rodeo (todas las rutas
+      // pasan por ahí): antes eso terminaba en un "desvío" de línea recta falso. Esos focos se omiten
+      // de la detección y solo se avisa al usuario.
+      const ENDPOINT_RADIUS_M = 150;
+      let endpointInAlertZone = false;
+      const isAtEndpoint = (lat, lng) => {
+        const near = swarmEngine.calculateDistanceMeters(startLatLng.lat, startLatLng.lng, lat, lng) <= ENDPOINT_RADIUS_M ||
+                     swarmEngine.calculateDistanceMeters(endLatLng.lat, endLatLng.lng, lat, lng) <= ENDPOINT_RADIUS_M;
+        if (near) endpointInAlertZone = true;
+        return near;
+      };
+
       // Check all active incidents
       for (const threat of activeThreats) {
+        if (isAtEndpoint(threat.lat, threat.lng)) continue;
         const dist = this.getMinDistanceToPolyline(directCoords, threat.lat, threat.lng);
         if (dist <= 85) {
           hasThreat = true;
@@ -1789,6 +1871,7 @@
       // Check all history heatmap points
       if (!hasThreat) {
         for (const hp of heatHistory) {
+          if (isAtEndpoint(hp.lat, hp.lng)) continue;
           const dist = this.getMinDistanceToPolyline(directCoords, hp.lat, hp.lng);
           if (dist <= 80) {
             hasThreat = true;
@@ -1834,19 +1917,33 @@
 
         let bestCandidate = null;
         let minCandidateDist = Infinity;
+        // Mejor rodeo POR CALLES REALES aunque no alcance los 65m de resguardo: se usa en vez de una
+        // línea recta si ningún candidato esquiva la zona por completo (en Bogotá hay focos muy juntos).
+        let partialCandidate = null;
+        let partialCandidateClearance = this.getMinDistanceToPolyline(directCoords, tLat, tLng);
+        const considerPartial = (cand, clearance) => {
+          if (clearance > partialCandidateClearance) {
+            partialCandidateClearance = clearance;
+            partialCandidate = cand;
+          }
+        };
 
         // A. First check if any OSRM street alternative already clears the threat
         if (osrmAlternatives && osrmAlternatives.length > 0) {
           for (const altR of osrmAlternatives) {
             const altCoords = altR.geometry.coordinates.map(c => [c[1], c[0]]);
             const altDist = this.getMinDistanceToPolyline(altCoords, tLat, tLng);
+            if (altDist < 65) {
+              considerPartial({
+                coords: altCoords, distance: altR.distance, duration: altR.duration,
+                steps: altR.legs ? altR.legs.flatMap(l => l.steps || []).map(s => formatOsrmStep(s, 'la vía alterna')) : [],
+                waypoint: altCoords[Math.floor(altCoords.length / 2)]
+              }, altDist);
+            }
             if (altDist >= 65) {
               let steps = [];
               if (altR.legs) {
-                steps = altR.legs.flatMap(l => l.steps || []).map(s => {
-                  const roadName = s.name ? `por <strong>${s.name}</strong>` : 'por vía alterna';
-                  return `Desvío seguro: ${s.maneuver.type} ${roadName} (${Math.round(s.distance)} m)`;
-                });
+                steps = altR.legs.flatMap(l => l.steps || []).map(s => formatOsrmStep(s, 'la vía alterna'));
               }
               bestCandidate = {
                 coords: altCoords,
@@ -1875,13 +1972,25 @@
                 const testCoords = dR.geometry.coordinates.map(c => [c[1], c[0]]);
                 const testDistToThreat = this.getMinDistanceToPolyline(testCoords, tLat, tLng);
 
+                if (testDistToThreat < 65) {
+                  considerPartial({
+                    coords: testCoords, distance: dR.distance, duration: dR.duration,
+                    steps: dR.legs ? dR.legs.flatMap(l => l.steps || [])
+                      .filter((st, i, arr) => st.maneuver?.type !== 'arrive' || i === arr.length - 1)
+                      .filter((st, i) => st.maneuver?.type !== 'depart' || i === 0)
+                      .map(st => formatOsrmStep(st, 'la calle alterna')) : [],
+                    waypoint: viaApex
+                  }, testDistToThreat);
+                }
+
                 if (testDistToThreat >= 65) {
                   let steps = [];
                   if (dR.legs) {
-                    steps = dR.legs.flatMap(l => l.steps || []).map(s => {
-                      const roadName = s.name ? `por <strong>${s.name}</strong>` : 'por calle alterna';
-                      return `Desvío seguro: ${s.maneuver.type} ${roadName} (${Math.round(s.distance)} m)`;
-                    });
+                    // Solo se conserva la llegada final (el punto intermedio del rodeo no es un destino).
+                    steps = dR.legs.flatMap(l => l.steps || [])
+                      .filter((st, i, arr) => st.maneuver?.type !== 'arrive' || i === arr.length - 1)
+                      .filter((st, i) => st.maneuver?.type !== 'depart' || i === 0)
+                      .map(st => formatOsrmStep(st, 'la calle alterna'));
                   }
                   bestCandidate = {
                     coords: testCoords,
@@ -1901,6 +2010,9 @@
         }
 
         // Apply best approved candidate or guaranteed geometric street corridor
+        if (!bestCandidate && partialCandidate) {
+          bestCandidate = partialCandidate;
+        }
         if (bestCandidate) {
           detourCoords = bestCandidate.coords;
           detourDistance = bestCandidate.distance;
@@ -2039,7 +2151,8 @@
           etaMins: Math.max(1, Math.round(directDuration / 60)),
           steps: directSteps,
           googleMapsUrl: directGmapsUrl,
-          isApproximate: directIsApproximate
+          isApproximate: directIsApproximate,
+          endpointInAlertZone
         };
       }
     }
@@ -3128,6 +3241,11 @@
         this.calculateAndRenderRoute();
         this.setPinMode(null);
         document.getElementById('mobile-route-guide')?.remove();
+        // En el celular el panel de rutas se cerró para poder tocar el mapa: se vuelve a abrir
+        // para que se vea el resultado de la ruta.
+        if (window.innerWidth < 900) {
+          document.querySelector('.bottom-nav-bar [data-tab="routes"]')?.click();
+        }
         return;
       }
 
@@ -3933,14 +4051,20 @@
       btnModeWalking?.addEventListener('click', () => setTravelMode('walking'));
       btnModeDriving?.addEventListener('click', () => setTravelMode('driving'));
 
+      const closeSearchDropdown = () => {
+        document.getElementById('search-results-dropdown')?.classList.add('hidden');
+      };
+
       btnModeDest?.addEventListener('click', () => {
         sounds.playClick();
+        closeSearchDropdown();
         this.setPinMode('dest');
         this.showToast('Toca cualquier calle en el mapa para colocar el DESTINO 🏁', 'info');
       });
 
       btnModeOrig?.addEventListener('click', () => {
         sounds.playClick();
+        closeSearchDropdown();
         this.setPinMode('orig');
         this.showToast('Toca el mapa para mover tu punto de ORIGEN 📍', 'info');
       });
@@ -3983,12 +4107,22 @@
 
         const results = await geocodeAddress(q, lat, lon);
 
+        const showSearchMessage = (html, color) => {
+          if (!dropdown) return;
+          dropdown.innerHTML = `
+            <div class="search-message-row" style="color:${color};">
+              <span>${html}</span>
+              <button type="button" class="btn-search-message-close" aria-label="Cerrar aviso">✕</button>
+            </div>`;
+          dropdown.querySelector('.btn-search-message-close')?.addEventListener('click', closeSearchDropdown);
+        };
+
         if (!results) {
-          if (dropdown) dropdown.innerHTML = '<div style="padding:10px;color:var(--color-critical);">No se pudo conectar con el buscador de direcciones. Verifica tu conexión e intenta de nuevo.</div>';
+          showSearchMessage('No se pudo conectar con el buscador. También puedes tocar <strong>Destino</strong> y elegir el punto en el mapa.', 'var(--color-critical)');
           return;
         }
         if (results.length === 0) {
-          if (dropdown) dropdown.innerHTML = '<div style="padding:10px;color:var(--color-warning);">No se encontraron lugares con ese nombre.</div>';
+          showSearchMessage('No se encontraron lugares con ese nombre. Prueba con un barrio o un lugar conocido, o toca <strong>Destino</strong> y elígelo en el mapa.', 'var(--color-warning)');
           return;
         }
         if (dropdown) {
@@ -4023,7 +4157,14 @@
 
       btnSearch?.addEventListener('click', executeSearch);
       searchInput?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') executeSearch();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          searchInput.blur(); // cierra el teclado en el celular para ver los resultados
+          executeSearch();
+        }
+      });
+      searchInput?.addEventListener('input', () => {
+        if (!searchInput.value.trim()) closeSearchDropdown();
       });
     }
 
@@ -4171,7 +4312,12 @@
                 ⚠️ No se pudo contactar al servidor de rutas por calles en este momento: esta es una línea aproximada, puede no seguir calles reales. Intenta de nuevo en unos segundos.
               </div>
             ` : ''}
-            ✅ <strong>Camino Despejado:</strong> Calles libres de alertas comunitarias y sin puntos calientes en el trayecto.<br><br>
+            ${res.endpointInAlertZone ? `
+              <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.4);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:0.74rem;color:#f59e0b;">
+                🟡 Tu punto de partida o tu destino está dentro de una zona con alertas: ve con precaución al salir o al llegar.
+              </div>
+            ` : ''}
+            ✅ <strong>Camino Despejado:</strong> ${res.endpointInAlertZone ? 'El resto del trayecto no cruza' : 'Calles libres de'} alertas comunitarias ni puntos calientes.<br><br>
             📏 <strong>Distancia:</strong> ${res.distanceKm} km | ⏱️ <strong>Tiempo estimado:</strong> ${res.etaMins} min.<br>
             <div style="margin-top: 10px;">
               <a href="${res.googleMapsUrl}" target="_blank" class="btn-gmaps-link">

@@ -5846,3 +5846,42 @@ html, body.citizen-body {
     display: none !important;
   }
 }
+
+/* Buscador de direcciones: los resultados y avisos se muestran DENTRO del panel (empujan el
+   contenido hacia abajo) en vez de flotar encima de los botones Destino / Origen / Mi GPS. */
+.route-search-wrapper .search-results-dropdown {
+  position: static;
+  margin-top: 6px;
+  max-height: 240px;
+  z-index: auto;
+}
+.search-message-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+.btn-search-message-close {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border-glass);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 899px) {
+  /* Guía "Toca una calle para fijar DESTINO": debajo de la barra de capas y sin tapar los controles */
+  .mobile-route-floating-guide {
+    top: 58px;
+    left: 8px;
+    right: 56px;
+    z-index: 26;
+  }
+}
