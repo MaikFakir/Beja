@@ -595,11 +595,25 @@ export class SwarmEngine {
   }
 
   loadHistory() {
+    let localHistory = [];
     try {
       const raw = localStorage.getItem(this.STORAGE_KEY_HISTORY);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length >= 20) {
+          localHistory = parsed;
+        }
+      }
     } catch (e) {}
-    return [];
+
+    if (localHistory.length === 0) {
+      const seed = this.getInitialHistoricalSeed();
+      if (seed && seed.length > 0) {
+        localHistory = seed;
+        try { localStorage.setItem(this.STORAGE_KEY_HISTORY, JSON.stringify(seed)); } catch (e) {}
+      }
+    }
+    return localHistory;
   }
 
   saveHistory() {
@@ -631,6 +645,9 @@ export class SwarmEngine {
    * Default seed for historical crime & risk hotspots (lat/lng around a vibrant metropolitan core)
    */
   getInitialHistoricalSeed() {
+    if (typeof window !== 'undefined' && Array.isArray(window.BOGOTA_HISTORICAL_HOTSPOTS) && window.BOGOTA_HISTORICAL_HOTSPOTS.length > 0) {
+      return window.BOGOTA_HISTORICAL_HOTSPOTS;
+    }
     return [];
   }
 }

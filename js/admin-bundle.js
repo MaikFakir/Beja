@@ -287,6 +287,10 @@
         localStorage.removeItem('colmena_incidents_history_v1');
       } catch (e) {}
 
+      // Historial compartido en la nube (colección `incident_history`). Mientras sea null, el mapa de
+      // calor usa el historial local del dispositivo (modo sin Firebase o reglas aún no publicadas).
+      this.cloudHistory = null;
+
       this.incidents = this.loadIncidents();
       this.history = this.loadHistory();
 
@@ -455,7 +459,7 @@
             // incidente que la nube seguía considerando activo — exactamente el "se apagó aquí pero
             // sigue prendido allá". Mientras tanto se mantiene visible (se reintenta en el próximo tick).
             active.push(inc);
-            firebaseSync.deleteIncidentFromCloud(inc.id).then(() => {
+            firebaseSync.deleteIncidentFromCloud(inc.id, 'EXPIRED', inc).then(() => {
               this.history.push({
                 lat: inc.lat,
                 lng: inc.lng,
@@ -478,7 +482,7 @@
         if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > this.COOLING_YELLOW_DURATION_MS) {
           changed = true;
           active.push(inc);
-          firebaseSync.deleteIncidentFromCloud(inc.id).then(() => {
+          firebaseSync.deleteIncidentFromCloud(inc.id, 'PATROL_ATTENDED', inc).then(() => {
             this.recordDismissedId(inc.id);
             this.incidents = this.incidents.filter(x => x.id !== inc.id);
             this.saveIncidents();
@@ -513,15 +517,66 @@
     }
 
     loadHistory() {
+      let combined = [];
+      if (Array.isArray(this.cloudHistory) && this.cloudHistory.length > 0) {
+        combined = combined.concat(this.cloudHistory);
+      }
+
+      let localHistory = [];
       try {
         const raw = localStorage.getItem(this.STORAGE_KEY_HISTORY);
-        if (raw) return JSON.parse(raw);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length >= 20) {
+            localHistory = parsed;
+          }
+        }
       } catch (e) {}
+
+      if (localHistory.length === 0) {
+        const seed = this.getInitialHistoricalSeed();
+        if (seed && seed.length > 0) {
+          localHistory = seed;
+          try { localStorage.setItem(this.STORAGE_KEY_HISTORY, JSON.stringify(seed)); } catch (e) {}
+        }
+      }
+
+      const map = new Map();
+      localHistory.forEach(pt => {
+        const key = pt.id || `${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
+        map.set(key, pt);
+      });
+      combined.forEach(pt => {
+        const key = pt.id || `${pt.lat.toFixed(4)},${pt.lng.toFixed(4)}`;
+        map.set(key, pt);
+      });
+
+      return Array.from(map.values());
+    }
+
+    getInitialHistoricalSeed() {
+      if (typeof window !== 'undefined' && Array.isArray(window.BOGOTA_HISTORICAL_HOTSPOTS) && window.BOGOTA_HISTORICAL_HOTSPOTS.length > 0) {
+        return window.BOGOTA_HISTORICAL_HOTSPOTS;
+      }
       return [];
     }
 
     saveHistory() {
       try { localStorage.setItem(this.STORAGE_KEY_HISTORY, JSON.stringify(this.history)); } catch (e) {}
+    }
+
+    /** Convierte los registros de `incident_history` en puntos del mapa de calor (sin falsas alarmas). */
+    setCloudHistory(records) {
+      this.cloudHistory = (records || [])
+        .filter(r => r && typeof r.lat === 'number' && typeof r.lng === 'number' && (r.heatWeight || 0) > 0)
+        .map(r => ({
+          lat: r.lat,
+          lng: r.lng,
+          category: r.category,
+          weight: r.heatWeight,
+          timeOfDay: r.timeOfDay,
+          timestamp: r.createdAt
+        }));
     }
 
     calculateDistanceMeters(lat1, lon1, lat2, lon2) {
@@ -645,6 +700,7 @@
       this.markersMap = new Map();
       this.center = [geoResolver.currentCoords.lat, geoResolver.currentCoords.lng];
       this.categoryFilter = 'ALL';
+      this.timeFilter = 'ALL';
       this.hasAutoCentered = false;
       this.initMap();
     }
@@ -705,6 +761,11 @@
       this.renderHeatmap();
     }
 
+    setTimeFilter(timeFilter) {
+      this.timeFilter = timeFilter;
+      this.renderHeatmap();
+    }
+
     renderHeatmap() {
       if (!this.map || !window.L || !window.L.heatLayer) return;
       if (this.heatLayer) {
@@ -717,13 +778,16 @@
       const points = [];
 
       history.forEach(pt => {
-        if (this.categoryFilter === 'ALL' || pt.category === this.categoryFilter) {
+        const matchesCategory = (this.categoryFilter === 'ALL' || pt.category === this.categoryFilter);
+        const matchesTime = (this.timeFilter === 'ALL' || pt.timeOfDay === this.timeFilter || pt.timeOfDay === 'BOTH');
+        if (matchesCategory && matchesTime) {
           points.push([pt.lat, pt.lng, pt.weight || 0.6]);
         }
       });
 
       active.forEach(inc => {
-        if (this.categoryFilter === 'ALL' || inc.category === this.categoryFilter) {
+        const matchesCategory = (this.categoryFilter === 'ALL' || inc.category === this.categoryFilter);
+        if (matchesCategory) {
           const isCrit = inc.status === INCIDENT_STATES.CRITICAL_SWARM;
           const weight = isCrit ? 1.0 : 0.7;
           points.push([inc.lat, inc.lng, weight]);
@@ -732,9 +796,10 @@
 
       if (points.length > 0) {
         this.heatLayer = L.heatLayer(points, {
-          radius: 22,
-          blur: 14,
+          radius: 24,
+          blur: 16,
           maxZoom: 18,
+          max: 1.0,
           gradient: { 0.2: '#00f5a0', 0.45: '#ffb800', 0.7: '#ff5e3a', 1.0: '#ff1744' }
         }).addTo(this.map);
       }
@@ -981,6 +1046,16 @@
         syncBus.emit('INCIDENT_MUTATION', { action: 'CLOUD_SYNC', count: cloudIncidents.length });
       }, (err) => console.warn('Incidents cloud sync error:', err));
 
+      const history = window.BejaIncidentHistory;
+      if (history) {
+        this.db.collection(history.COLLECTION).orderBy('archivedAt', 'desc').limit(history.LIMIT).onSnapshot((snapshot) => {
+          const records = [];
+          snapshot.forEach(doc => records.push({ ...doc.data(), id: doc.id }));
+          swarmEngine.setCloudHistory(records);
+          syncBus.emit('INCIDENT_MUTATION', { action: 'HISTORY_SYNC', count: records.length });
+        }, (err) => console.warn('No se pudo leer incident_history (¿reglas publicadas?):', err));
+      }
+
       // Avisos de Zona en tiempo real: antes esto se leía solo con un .get() de una sola vez cada
       // que el admin abría la pestaña "Avisos de Zona", así que un aviso creado por OTRO despachador
       // (u otro dispositivo) no aparecía hasta reabrir esa pestaña o recargar la página.
@@ -1000,11 +1075,50 @@
       } catch (e) { console.error('No se pudo guardar el incidente en Firestore (¿reglas publicadas?):', e); }
     }
 
-    async deleteIncidentFromCloud(id) {
+    /**
+     * Saca un incidente de la colección de activos. Antes de borrarlo guarda un registro anónimo en
+     * `incident_history` para que el dato no se pierda (mapa de calor compartido y analítica).
+     * `finalStatus`: EXPIRED | PATROL_ATTENDED | RESOLVED | FALSE_ALARM.
+     * `localSnapshot`: copia local del incidente (p. ej. con refutaciones que aún no subieron a la nube).
+     */
+    async deleteIncidentFromCloud(id, finalStatus = 'EXPIRED', localSnapshot = null) {
       if (!this.isConfigured || !this.db || !id) return;
+      try {
+        if (window.BejaIncidentHistory) {
+          await window.BejaIncidentHistory.archive(this.db, id, finalStatus, localSnapshot);
+        }
+      } catch (e) {
+        if (e && e.code === 'permission-denied') {
+          // Reglas sin publicar para incident_history: no bloquear el ciclo de vida de las alertas.
+          console.error('No se pudo archivar en incident_history (publica las reglas de Firestore):', e);
+        } else {
+          // Sin red u otro fallo transitorio: no borrar y propagar el error, así el llamador no lo da
+          // por archivado localmente y el próximo tick reintenta sin perder el dato.
+          throw e;
+        }
+      }
       try {
         await this.db.collection('incidents').doc(id).delete();
       } catch (e) { console.error('No se pudo borrar el incidente en Firestore (¿reglas publicadas?):', e); }
+    }
+
+    /** Descarga todo el archivo histórico como CSV (datos anónimos, listo para análisis). */
+    async exportHistoryCsv() {
+      const history = window.BejaIncidentHistory;
+      if (!this.isConfigured || !this.db || !history) {
+        throw new Error('Nube no configurada: el historial solo existe cuando Firebase está activo.');
+      }
+      const records = await history.fetchAll(this.db);
+      const blob = new Blob(['\ufeff' + history.toCsv(records)], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `beja_historial_incidentes_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return records.length;
     }
 
     async sendBroadcastToCloud(broadcastData) {
@@ -1573,6 +1687,25 @@
           this.renderIncidentQueue();
         });
       });
+
+      const timePills = document.querySelectorAll('.admin-time-pill');
+      timePills.forEach(pill => {
+        pill.addEventListener('click', () => {
+          sounds.playClick();
+          timePills.forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
+          const time = pill.dataset.time;
+          if (this.tacticalMap) {
+            this.tacticalMap.setTimeFilter(time);
+          }
+          const timeMsgs = {
+            ALL: '🌐 Modo 24H: Historial consolidado de 5 años en Bogotá.',
+            DAY: '☀️ Modo Diurno: Puntos críticos de 06:00 a 18:00 (Comercio, Transporte, Cosquilleo).',
+            NIGHT: '🌙 Modo Nocturno: Puntos críticos de 18:00 a 05:00 (Atracos, Puentes Oscuros, Riñas).'
+          };
+          this.showToast(timeMsgs[time] || 'Filtro de horario aplicado.', 'info');
+        });
+      });
     }
 
     setupEventListeners() {
@@ -1582,6 +1715,24 @@
           const isMuted = sounds.toggleMute();
           soundToggleBtn.innerHTML = isMuted ? '🔇 Audio' : '🔊 Audio';
           soundToggleBtn.className = isMuted ? 'tactical-btn btn-muted' : 'tactical-btn btn-active';
+        });
+      }
+
+      const exportBtn = document.getElementById('btn-export-history');
+      if (exportBtn) {
+        exportBtn.addEventListener('click', async () => {
+          sounds.playClick();
+          const label = exportBtn.innerHTML;
+          exportBtn.disabled = true;
+          exportBtn.innerHTML = '⏳ Exportando…';
+          try {
+            const count = await firebaseSync.exportHistoryCsv();
+            exportBtn.innerHTML = `✅ ${count} registros`;
+          } catch (err) {
+            console.error('No se pudo exportar el historial:', err);
+            exportBtn.innerHTML = '⚠️ Error al exportar';
+          }
+          setTimeout(() => { exportBtn.innerHTML = label; exportBtn.disabled = false; }, 2500);
         });
       }
 
@@ -1797,7 +1948,8 @@
       const inc = swarmEngine.loadIncidents().find(i => i.id === id);
       swarmEngine.resolveIncident(id);
       if (firebaseSync.deleteIncidentFromCloud) {
-        firebaseSync.deleteIncidentFromCloud(id);
+        firebaseSync.deleteIncidentFromCloud(id, INCIDENT_STATES.RESOLVED, inc)
+          .catch((err) => console.error('No se pudo archivar el incidente resuelto en la nube:', id, err));
       } else if (inc) {
         firebaseSync.saveIncidentToCloud({ ...inc, status: 'RESOLVED' });
       }
@@ -1810,7 +1962,8 @@
       const inc = swarmEngine.loadIncidents().find(i => i.id === id);
       swarmEngine.markFalseAlarm(id);
       if (firebaseSync.deleteIncidentFromCloud) {
-        firebaseSync.deleteIncidentFromCloud(id);
+        firebaseSync.deleteIncidentFromCloud(id, INCIDENT_STATES.FALSE_ALARM, inc)
+          .catch((err) => console.error('No se pudo archivar la falsa alarma en la nube:', id, err));
       } else if (inc) {
         firebaseSync.saveIncidentToCloud({ ...inc, status: 'FALSE_ALARM' });
       }
@@ -1857,7 +2010,10 @@
         } else {
           sounds.playWarningPing();
           if (res.isDismissed) {
-            if (firebaseSync.deleteIncidentFromCloud) firebaseSync.deleteIncidentFromCloud(id);
+            if (firebaseSync.deleteIncidentFromCloud) {
+              firebaseSync.deleteIncidentFromCloud(id, INCIDENT_STATES.FALSE_ALARM, res.incident)
+                .catch((err) => console.error('No se pudo archivar la falsa alarma en la nube:', id, err));
+            }
           } else if (res.incident) {
             firebaseSync.saveIncidentToCloud(res.incident);
           }

@@ -275,6 +275,33 @@ html, body.admin-body {
   box-shadow: 0 0 10px rgba(0, 210, 255, 0.4);
 }
 
+.admin-time-pill {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  color: var(--text-muted);
+  font-size: clamp(0.65rem, 1.9vw, 0.72rem);
+  font-weight: 600;
+  padding: 4px clamp(8px, 2vw, 12px);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: var(--transition-fast);
+  white-space: nowrap;
+}
+
+.admin-time-pill:hover {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fff;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.admin-time-pill.active {
+  background: rgba(245, 158, 11, 0.25);
+  color: #f59e0b;
+  border-color: #f59e0b;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
 /* Main Dashboard Workspace (Responsive Split Layout) */
 .admin-workspace {
   flex: 1 1 0;

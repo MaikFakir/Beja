@@ -472,6 +472,7 @@
           </div>
           <div class="floating-top-layers-group" role="group" aria-label="Capas del Mapa">
             <button type="button" class="top-layer-pill-btn active" id="btn-toggle-heatmap">🔥 Capa de Calor</button>
+            <button type="button" class="top-layer-pill-btn" id="btn-cycle-time-filter" title="Filtrar mapa de calor por horario histórico (24H / Día / Noche)">🕒 24H</button>
             <button type="button" class="top-layer-pill-btn" id="btn-toggle-safepoints">🛡️ Puntos Seguros</button>
           </div>
         </div>
@@ -505,11 +506,11 @@
 
           <!-- Floating Layer / Time Filter Dropdown Menu -->
           <div class="floating-layer-menu hidden" id="floating-layer-menu">
-            <span class="layer-menu-title">Filtro de Incidentes</span>
+            <span class="layer-menu-title">Filtro de Horario Histórico</span>
             <div class="layer-menu-buttons">
-              <button type="button" class="time-filter-btn active" data-time="ALL" id="filter-time-all">🔥 Todo</button>
-              <button type="button" class="time-filter-btn" data-time="DAY" id="filter-time-day">☀️ Día</button>
-              <button type="button" class="time-filter-btn" data-time="NIGHT" id="filter-time-night">🌙 Noche</button>
+              <button type="button" class="time-filter-btn active" data-time="ALL" id="filter-time-all">🔥 Todo (24H)</button>
+              <button type="button" class="time-filter-btn" data-time="DAY" id="filter-time-day">☀️ Día (06:00 - 18:00)</button>
+              <button type="button" class="time-filter-btn" data-time="NIGHT" id="filter-time-night">🌙 Noche (18:00 - 05:00)</button>
             </div>
           </div>
         </div>
@@ -767,8 +768,12 @@
   <script src="js/firebase-config.js?v=20260929a"></script>
   <script src="js/firebaseAuth.js?v=20260929a"></script>
   <script src="js/chatService.js?v=20260929a"></script>
+  <script src="js/incidentHistory.js?v=20260929b"></script>
+
+  <!-- Bogota 5-Year Historical Crime & Accident Georeferenced Dataset -->
+  <script src="js/bogota-historical-data.js?v=20260929b"></script>
 
   <!-- Universal Self-Contained Bundle -->
-  <script src="js/bundle.js?v=20260929a"></script>
+  <script src="js/bundle.js?v=20260929b"></script>
 </body>
 </html>

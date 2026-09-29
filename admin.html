@@ -67,6 +67,9 @@
       <button class="tactical-btn" id="btn-open-bulk-modal" style="background: rgba(139, 92, 246, 0.22); border-color: var(--color-accent); color: #c4b5fd;">
         ⚡ Inyector Masivo
       </button>
+      <button class="tactical-btn" id="btn-export-history" title="Descargar el historial anónimo de incidentes (CSV)">
+        📊 Exportar Historial
+      </button>
       <button class="tactical-btn" id="btn-toggle-sound">
         🔊 Audio
       </button>
@@ -88,7 +91,7 @@
     <span class="telemetry-mini-pill"><strong style="color:var(--color-safe);">🚓 <span id="stat-units-m">12</span></strong> Patrullas</span>
   </div>
 
-  <!-- Category Filter Strip for Authorities -->
+  <!-- Category & Time Filter Strip for Authorities -->
   <nav class="admin-category-nav" id="admin-category-nav" aria-label="Filtros de tipo de alerta">
     <span class="filter-nav-label">Filtrar:</span>
     <button class="admin-filter-pill active" data-category="ALL">🔥 Todo</button>
@@ -98,6 +101,13 @@
     <button class="admin-filter-pill" data-category="SUSPICIOUS">👁️ Sospechoso</button>
     <button class="admin-filter-pill" data-category="ACCIDENT">💥 Accidente</button>
     <button class="admin-filter-pill" data-category="VANDALISM">🔨 Vandalismo</button>
+
+    <div class="admin-time-nav-group" style="display:inline-flex; gap:5px; margin-left:auto; align-items:center;">
+      <span class="filter-nav-label" style="margin-left:8px; opacity:0.85;">Horario:</span>
+      <button class="admin-time-pill active" data-time="ALL" title="Historial completo de 5 años en Bogotá">🌐 24H</button>
+      <button class="admin-time-pill" data-time="DAY" title="Filtro diurno (06:00 - 18:00): Comercio, transporte y cosquilleo">☀️ Día</button>
+      <button class="admin-time-pill" data-time="NIGHT" title="Filtro nocturno (18:00 - 05:00): Atracos, puentes oscuros y riñas">🌙 Noche</button>
+    </div>
   </nav>
 
   <!-- Split Tactical Workspace -->
@@ -513,8 +523,12 @@
   <script src="js/firebase-config.js?v=20260929a"></script>
   <script src="js/firebaseAuth.js?v=20260929a"></script>
   <script src="js/chatService.js?v=20260929a"></script>
+  <script src="js/incidentHistory.js?v=20260929b"></script>
+
+  <!-- Bogota 5-Year Historical Crime & Accident Georeferenced Dataset -->
+  <script src="js/bogota-historical-data.js?v=20260929b"></script>
 
   <!-- Universal Admin Bundle Script -->
-  <script src="js/admin-bundle.js?v=20260929a"></script>
+  <script src="js/admin-bundle.js?v=20260929b"></script>
 </body>
 </html>
