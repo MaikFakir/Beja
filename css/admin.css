@@ -1641,4 +1641,203 @@ html, body.admin-body {
   background: rgba(11, 17, 33, 0.95) !important;
 }
 
+/* ==========================================================================
+   BEJA HEXAGONAL HIVE CARE ZONES (PANALES DE CUIDADO DE ALTA FRECUENCIA)
+   ========================================================================== */
+.hive-care-zone-polygon {
+  transition: all 0.3s ease;
+  cursor: pointer;
+  filter: drop-shadow(0 0 10px rgba(255, 23, 68, 0.45));
+}
+
+.hive-care-zone-polygon:hover {
+  filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.8)) brightness(1.3);
+}
+
+.hive-badge-icon {
+  background: transparent;
+  border: none;
+}
+
+.hive-hex-pin {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.hive-hex-pin:hover {
+  transform: scale(1.35);
+}
+
+.hive-hex-pin .hex-symbol {
+  font-size: 26px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.hive-hex-pin.hex-crit .hex-symbol {
+  color: #ff1744;
+  filter: drop-shadow(0 0 8px #ff1744);
+}
+
+.hive-hex-pin.hex-warn .hex-symbol {
+  color: #f59e0b;
+  filter: drop-shadow(0 0 8px #f59e0b);
+}
+
+.hive-hex-pin.hex-acci .hex-symbol {
+  color: #00d2ff;
+  filter: drop-shadow(0 0 8px #00d2ff);
+}
+
+.hive-hex-pin .hex-cat-icon {
+  font-size: 11px;
+  position: relative;
+  z-index: 2;
+  margin-top: -1px;
+}
+
+/* Honeycomb Care Zone Popup Card */
+.hive-popup-card {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  min-width: 250px;
+  max-width: 320px;
+  color: #f8fafc;
+  line-height: 1.4;
+  padding: 4px;
+}
+
+.hive-popup-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.hive-tag {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.hive-tag.tag-crit {
+  background: rgba(239, 68, 68, 0.25);
+  color: #ff4d6d;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+}
+
+.hive-tag.tag-warn {
+  background: rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+}
+
+.hive-tag.tag-acci {
+  background: rgba(0, 210, 255, 0.25);
+  color: #38bdf8;
+  border: 1px solid rgba(0, 210, 255, 0.45);
+}
+
+.hive-time-tag {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.hive-popup-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0 0 6px 0;
+  line-height: 1.3;
+}
+
+.hive-popup-desc {
+  font-size: 11px;
+  color: #cbd5e1;
+  margin: 0 0 10px 0;
+}
+
+.hive-freq-meter {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+}
+
+.freq-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+
+.freq-label-row span {
+  color: #94a3b8;
+}
+
+.freq-label-row strong {
+  color: #fbbf24;
+}
+
+.freq-meter-bar {
+  width: 100%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.freq-meter-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.freq-meter-fill.fill-crit {
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
+}
+
+.freq-meter-fill.fill-warn {
+  background: linear-gradient(90deg, #10b981, #f59e0b);
+}
+
+.hive-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  font-size: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hive-meta-grid span {
+  color: #64748b;
+  display: block;
+}
+
+.hive-meta-grid strong {
+  color: #f1f5f9;
+}
+
 

@@ -1198,6 +1198,60 @@
       }
     }
 
+    createHexagonPoints(centerLat, centerLng, radiusMeters) {
+      const points = [];
+      for (let i = 0; i < 6; i++) {
+        const angleRad = (Math.PI / 180) * (30 + i * 60);
+        const pLat = centerLat + (radiusMeters * Math.sin(angleRad)) / 111320;
+        const pLng = centerLng + (radiusMeters * Math.cos(angleRad)) / (111320 * Math.cos((centerLat * Math.PI) / 180));
+        points.push([pLat, pLng]);
+      }
+      return points;
+    }
+
+    getFrequencyScale(pt) {
+      const freqRaw = (pt.frequency || '').toLowerCase();
+      const weight = typeof pt.weight === 'number' ? pt.weight : 0.6;
+      let pct = 70;
+      let label = pt.frequency || 'Alta';
+      let tagClass = 'tag-warn';
+      let fillClass = 'fill-warn';
+      let color = '#fbbf24';
+      let estEvents = '12 - 20 incidentes / mes';
+
+      if (freqRaw.includes('crític') || freqRaw.includes('critic') || freqRaw.includes('máxim') || freqRaw.includes('maxim') || weight >= 0.90) {
+        pct = Math.min(100, Math.round((weight >= 0.9 ? weight : 0.95) * 100));
+        label = pt.frequency || 'Crítica (Alerta Máxima)';
+        tagClass = 'tag-crit';
+        fillClass = 'fill-crit';
+        color = '#ff1744';
+        estEvents = '25+ incidentes / mes';
+      } else if (freqRaw.includes('muy alta') || weight >= 0.84) {
+        pct = Math.min(92, Math.round((weight >= 0.84 ? weight : 0.88) * 100));
+        label = pt.frequency || 'Muy Alta';
+        tagClass = 'tag-crit';
+        fillClass = 'fill-crit';
+        color = '#f87171';
+        estEvents = '18 - 25 incidentes / mes';
+      } else if (freqRaw.includes('alta') || weight >= 0.74) {
+        pct = Math.min(82, Math.round((weight >= 0.74 ? weight : 0.78) * 100));
+        label = pt.frequency || 'Alta';
+        tagClass = 'tag-warn';
+        fillClass = 'fill-warn';
+        color = '#fbbf24';
+        estEvents = '10 - 18 incidentes / mes';
+      } else {
+        pct = Math.max(35, Math.round(weight * 100));
+        label = pt.frequency || 'Moderada / Ocasional';
+        tagClass = 'tag-acci';
+        fillClass = 'fill-warn';
+        color = '#38bdf8';
+        estEvents = '4 - 10 incidentes / mes';
+      }
+
+      return { pct, label, tagClass, fillClass, color, estEvents };
+    }
+
     renderHeatmap() {
       if (!this.map) return;
       if (!window.L || !window.L.heatLayer) {
@@ -1222,62 +1276,129 @@
 
       rawHistory.forEach(pt => {
         if (this.timeFilter === 'ALL' || pt.timeOfDay === this.timeFilter || pt.timeOfDay === 'BOTH') {
-          points.push([pt.lat, pt.lng, pt.weight || 0.65]);
+          // El mapa de calor SIEMPRE recibe el punto con su peso térmico calibrado:
+          // Puntos pasados u ocasionales quedan con intensidades moderadas (verde persistente).
+          // Puntos críticos y de alta frecuencia escalan gradualmente a rojo.
+          const heatWeight = typeof pt.weight === 'number' ? pt.weight : 0.65;
+          points.push([pt.lat, pt.lng, heatWeight]);
 
-          // Also create a visual tactical marker for each historical hotspot
-          const isAccident = pt.category === 'ACCIDENT';
-          const isCritical = (pt.weight || 0.6) >= 0.85 || (pt.frequency && pt.frequency.includes('Crítico'));
-          const fillColor = isAccident ? '#00d2ff' : (isCritical ? '#ff1744' : '#ff9100');
+          // FILTRO ESTRICTO DE USUARIO:
+          // Solo los puntos con FRECUENCIA ALTA se demarcan como "Zona de Cuidado / Panal Hexagonal".
+          // Para los que pasaron en algún momento (frecuencia moderada o eventos pasados),
+          // NO se dibuja polígono ni marcador; queda EXCLUSIVAMENTE la zona de calor activa en verde/amarillo.
+          const freqRaw = (pt.frequency || '').toLowerCase();
+          const isHighFreq = (pt.weight >= 0.78) || (
+            freqRaw.includes('alta') ||
+            freqRaw.includes('crític') ||
+            freqRaw.includes('critic') ||
+            freqRaw.includes('máxim') ||
+            freqRaw.includes('maxim')
+          );
 
-          const marker = L.circleMarker([pt.lat, pt.lng], {
-            radius: isCritical ? 9 : 7,
-            fillColor: fillColor,
-            color: '#ffffff',
-            weight: 1.5,
-            opacity: 0.95,
-            fillOpacity: 0.75,
-            className: 'hotspot-pulse-marker'
-          });
+          if (isHighFreq) {
+            const freqScale = this.getFrequencyScale(pt);
+            const isAccident = pt.category === 'ACCIDENT';
+            const isCrit = (pt.weight || 0.6) >= 0.88 || freqRaw.includes('crític') || freqRaw.includes('critic');
 
-          const timeLabel = pt.timeOfDay === 'DAY' ? '☀️ DÍA (06:00 - 18:00)' : (pt.timeOfDay === 'NIGHT' ? '🌙 NOCHE (18:00 - 05:00)' : '🕒 24 HORAS');
-          const catName = pt.category === 'ACCIDENT' ? '💥 Siniestro Vial' : (pt.category === 'ROBBERY' ? '🚨 Hurto / Asalto' : '⚔️ Riña / Inseguridad');
+            const strokeColor = isAccident ? '#00d2ff' : (isCrit ? '#ff1744' : '#f59e0b');
+            const pinClass = isAccident ? 'hex-acci' : (isCrit ? 'hex-crit' : 'hex-warn');
+            const catIcon = isAccident ? '💥' : (pt.category === 'ROBBERY' ? '🚨' : '🛡️');
+            const catName = isAccident ? 'Siniestro Vial' : (pt.category === 'ROBBERY' ? 'Hurto / Asalto' : 'Inseguridad / Riña');
+            const timeLabel = pt.timeOfDay === 'DAY' ? '☀️ DÍA (06:00 - 18:00)' : (pt.timeOfDay === 'NIGHT' ? '🌙 NOCHE (18:00 - 05:00)' : '🕒 24 HORAS');
 
-          marker.bindPopup(`
-            <div style="font-family:system-ui,-apple-system,sans-serif; min-width:230px; color:#f8fafc; line-height:1.4;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <span style="background:${isAccident ? '#0284c7' : (isCritical ? '#dc2626' : '#d97706')}; color:#fff; font-size:10px; font-weight:800; padding:2px 7px; border-radius:10px; text-transform:uppercase;">
-                  ${catName}
-                </span>
-                <span style="font-size:10px; color:#94a3b8; font-weight:700;">${timeLabel}</span>
+            // 1. Polígono Regular Hexagonal (Panal de Cuidado de 6 lados)
+            const radiusMeters = isCrit ? 290 : 230;
+            const hexCoords = this.createHexagonPoints(pt.lat, pt.lng, radiusMeters);
+
+            const hexPolygon = L.polygon(hexCoords, {
+              color: strokeColor,
+              weight: 2,
+              dashArray: '5, 5',
+              fillColor: strokeColor,
+              fillOpacity: 0.16,
+              className: 'hive-care-zone-polygon'
+            });
+
+            // 2. Pin Central Táctico en forma de Panal
+            const pinIcon = L.divIcon({
+              className: 'hive-badge-icon',
+              html: `
+                <div class="hive-hex-pin ${pinClass}" title="${pt.name || 'Panal de Cuidado'}">
+                  <span class="hex-symbol">⬢</span>
+                  <span class="hex-cat-icon">${catIcon}</span>
+                </div>
+              `,
+              iconSize: [28, 28],
+              iconAnchor: [14, 14],
+              popupAnchor: [0, -14]
+            });
+            const centerMarker = L.marker([pt.lat, pt.lng], { icon: pinIcon });
+
+            // 3. Popup Táctico con Escala de Frecuencia de Eventos
+            const popupHtml = `
+              <div class="hive-popup-card">
+                <div class="hive-popup-top">
+                  <span class="hive-tag ${freqScale.tagClass}">
+                    ⬢ ZONA DE CUIDADO • ${catName}
+                  </span>
+                  <span class="hive-time-tag">${timeLabel}</span>
+                </div>
+                <div class="hive-popup-title">${pt.name || 'Zona de Cuidado Georreferenciada'}</div>
+                <p class="hive-popup-desc">${pt.description || 'Punto caliente de alta recurrencia reportado en Bogotá.'}</p>
+
+                <!-- ESCALA DE FRECUENCIA DE EVENTOS -->
+                <div class="hive-freq-meter">
+                  <div class="freq-label-row">
+                    <span>Escala de Frecuencia de Eventos:</span>
+                    <strong style="color:${freqScale.color};">${freqScale.label} (${freqScale.pct}%)</strong>
+                  </div>
+                  <div class="freq-meter-bar">
+                    <div class="freq-meter-fill ${freqScale.fillClass}" style="width:${freqScale.pct}%;"></div>
+                  </div>
+                </div>
+
+                <div class="hive-meta-grid">
+                  <div><span>Franja Horaria:</span><strong>${pt.hour || 'Todo el día'}</strong></div>
+                  <div><span>Recurrencia:</span><strong>${freqScale.estEvents}</strong></div>
+                  <div style="grid-column:span 2;"><span>Localidad:</span><strong>${pt.locality || 'Bogotá D.C.'}</strong></div>
+                </div>
               </div>
-              <strong style="display:block; font-size:13px; color:#ffffff; margin-bottom:4px;">${pt.name || 'Punto Crítico'}</strong>
-              <p style="font-size:11px; color:#cbd5e1; margin:0 0 8px 0;">${pt.description || 'Punto caliente reportado con recurrencia histórica en Bogotá.'}</p>
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; font-size:10px; background:rgba(255,255,255,0.06); padding:5px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.1);">
-                <div><span style="color:#64748b;">Franja:</span> <strong style="color:#f1f5f9;">${pt.hour || 'Todo el día'}</strong></div>
-                <div><span style="color:#64748b;">Frecuencia:</span> <strong style="color:#fbbf24;">${pt.frequency || 'Alta'}</strong></div>
-                <div style="grid-column:span 2;"><span style="color:#64748b;">Localidad:</span> <strong style="color:#38bdf8;">${pt.locality || 'Bogotá D.C.'}</strong></div>
-              </div>
-            </div>
-          `);
-          marker.addTo(this.hotspotMarkersLayer);
+            `;
+
+            hexPolygon.bindPopup(popupHtml);
+            centerMarker.bindPopup(popupHtml);
+
+            hexPolygon.addTo(this.hotspotMarkersLayer);
+            centerMarker.addTo(this.hotspotMarkersLayer);
+          }
         }
       });
 
-      // Place exact single heat point per active incident
+      // Añadir incidentes activos en tiempo real a la zona térmica
       activeIncidents.forEach(inc => {
         const isCrit = inc.status === INCIDENT_STATES.CRITICAL_SWARM;
-        const mainWeight = isCrit ? 1.0 : (inc.reportCount >= 1 ? 0.8 : 0.6);
+        const mainWeight = isCrit ? 1.0 : (inc.reportCount >= 1 ? 0.82 : 0.65);
         points.push([inc.lat, inc.lng, mainWeight]);
       });
 
+      // Espectro Térmico Continuo:
+      // Nunca desaparece. Los eventos pasados se proyectan en verde esmeralda y verde medio,
+      // mientras las áreas de alta recurrencia o incidentes activos suben a amarillo, naranja y rojo carmesí.
       if (points.length > 0) {
         this.heatLayer = L.heatLayer(points, {
-          radius: 30,
-          blur: 20,
+          radius: 34,
+          blur: 22,
           maxZoom: 17,
           max: 1.0,
-          minOpacity: 0.40,
-          gradient: { 0.2: '#00f5a0', 0.45: '#ffb800', 0.70: '#ff5e3a', 0.95: '#ff1744' }
+          minOpacity: 0.30,
+          gradient: {
+            0.05: '#00f5a0',  // Verde esmeralda (eventos históricos pasados, presencia perenne)
+            0.22: '#10b981',  // Verde medio
+            0.42: '#eab308',  // Amarillo preventivo
+            0.62: '#f97316',  // Naranja alerta
+            0.80: '#ef4444',  // Rojo alerta alta
+            1.00: '#991b1b'   // Rojo carmesí profundo (máxima criticidad)
+          }
         }).addTo(this.map);
       }
     }

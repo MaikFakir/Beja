@@ -142,6 +142,63 @@ export class RiskMap {
   /**
    * Render dynamic heatmap layer (Leaflet.heat)
    */
+  createHexagonPoints(centerLat, centerLng, radiusMeters) {
+    const points = [];
+    for (let i = 0; i < 6; i++) {
+      const angleRad = (Math.PI / 180) * (30 + i * 60);
+      const pLat = centerLat + (radiusMeters * Math.sin(angleRad)) / 111320;
+      const pLng = centerLng + (radiusMeters * Math.cos(angleRad)) / (111320 * Math.cos((centerLat * Math.PI) / 180));
+      points.push([pLat, pLng]);
+    }
+    return points;
+  }
+
+  getFrequencyScale(pt) {
+    const freqRaw = (pt.frequency || '').toLowerCase();
+    const weight = typeof pt.weight === 'number' ? pt.weight : 0.6;
+    let pct = 70;
+    let label = pt.frequency || 'Alta';
+    let tagClass = 'tag-warn';
+    let fillClass = 'fill-warn';
+    let color = '#fbbf24';
+    let estEvents = '12 - 20 incidentes / mes';
+
+    if (freqRaw.includes('crític') || freqRaw.includes('critic') || freqRaw.includes('máxim') || freqRaw.includes('maxim') || weight >= 0.90) {
+      pct = Math.min(100, Math.round((weight >= 0.9 ? weight : 0.95) * 100));
+      label = pt.frequency || 'Crítica (Alerta Máxima)';
+      tagClass = 'tag-crit';
+      fillClass = 'fill-crit';
+      color = '#ff1744';
+      estEvents = '25+ incidentes / mes';
+    } else if (freqRaw.includes('muy alta') || weight >= 0.84) {
+      pct = Math.min(92, Math.round((weight >= 0.84 ? weight : 0.88) * 100));
+      label = pt.frequency || 'Muy Alta';
+      tagClass = 'tag-crit';
+      fillClass = 'fill-crit';
+      color = '#f87171';
+      estEvents = '18 - 25 incidentes / mes';
+    } else if (freqRaw.includes('alta') || weight >= 0.74) {
+      pct = Math.min(82, Math.round((weight >= 0.74 ? weight : 0.78) * 100));
+      label = pt.frequency || 'Alta';
+      tagClass = 'tag-warn';
+      fillClass = 'fill-warn';
+      color = '#fbbf24';
+      estEvents = '10 - 18 incidentes / mes';
+    } else {
+      pct = Math.max(35, Math.round(weight * 100));
+      label = pt.frequency || 'Moderada / Ocasional';
+      tagClass = 'tag-acci';
+      fillClass = 'fill-warn';
+      color = '#38bdf8';
+      estEvents = '4 - 10 incidentes / mes';
+    }
+
+    return { pct, label, tagClass, fillClass, color, estEvents };
+  }
+
+  /**
+   * Render dynamic heatmap layer (Leaflet.heat) and Hexagonal Care Zones
+   */
   renderHeatmap() {
     if (!this.map || !window.L || !window.L.heatLayer) return;
 
@@ -149,35 +206,127 @@ export class RiskMap {
       this.map.removeLayer(this.heatLayer);
       this.heatLayer = null;
     }
+    if (this.hotspotMarkersLayer) {
+      this.hotspotMarkersLayer.clearLayers();
+    } else {
+      this.hotspotMarkersLayer = L.layerGroup().addTo(this.map);
+    }
 
     const rawHistory = swarmEngine.loadHistory();
     const activeIncidents = swarmEngine.loadIncidents();
+    const points = [];
 
-    // Filter points by time of day if requested
-    let points = rawHistory.filter(pt => {
-      if (this.timeFilter === 'ALL') return true;
-      return pt.timeOfDay === this.timeFilter;
-    }).map(pt => [pt.lat, pt.lng, pt.weight || 0.7]);
+    rawHistory.forEach(pt => {
+      if (this.timeFilter === 'ALL' || pt.timeOfDay === this.timeFilter || pt.timeOfDay === 'BOTH') {
+        const heatWeight = typeof pt.weight === 'number' ? pt.weight : 0.65;
+        points.push([pt.lat, pt.lng, heatWeight]);
 
-    // Add active incidents with high thermal intensity
+        const freqRaw = (pt.frequency || '').toLowerCase();
+        const isHighFreq = (pt.weight >= 0.78) || (
+          freqRaw.includes('alta') ||
+          freqRaw.includes('crític') ||
+          freqRaw.includes('critic') ||
+          freqRaw.includes('máxim') ||
+          freqRaw.includes('maxim')
+        );
+
+        if (isHighFreq) {
+          const freqScale = this.getFrequencyScale(pt);
+          const isAccident = pt.category === 'ACCIDENT';
+          const isCrit = (pt.weight || 0.6) >= 0.88 || freqRaw.includes('crític') || freqRaw.includes('critic');
+
+          const strokeColor = isAccident ? '#00d2ff' : (isCrit ? '#ff1744' : '#f59e0b');
+          const pinClass = isAccident ? 'hex-acci' : (isCrit ? 'hex-crit' : 'hex-warn');
+          const catIcon = isAccident ? '💥' : (pt.category === 'ROBBERY' ? '🚨' : '🛡️');
+          const catName = isAccident ? 'Siniestro Vial' : (pt.category === 'ROBBERY' ? 'Hurto / Asalto' : 'Inseguridad / Riña');
+          const timeLabel = pt.timeOfDay === 'DAY' ? '☀️ DÍA (06:00 - 18:00)' : (pt.timeOfDay === 'NIGHT' ? '🌙 NOCHE (18:00 - 05:00)' : '🕒 24 HORAS');
+
+          const radiusMeters = isCrit ? 290 : 230;
+          const hexCoords = this.createHexagonPoints(pt.lat, pt.lng, radiusMeters);
+
+          const hexPolygon = L.polygon(hexCoords, {
+            color: strokeColor,
+            weight: 2,
+            dashArray: '5, 5',
+            fillColor: strokeColor,
+            fillOpacity: 0.16,
+            className: 'hive-care-zone-polygon'
+          });
+
+          const pinIcon = L.divIcon({
+            className: 'hive-badge-icon',
+            html: `
+              <div class="hive-hex-pin ${pinClass}" title="${pt.name || 'Panal de Cuidado'}">
+                <span class="hex-symbol">⬢</span>
+                <span class="hex-cat-icon">${catIcon}</span>
+              </div>
+            `,
+            iconSize: [28, 28],
+            iconAnchor: [14, 14],
+            popupAnchor: [0, -14]
+          });
+          const centerMarker = L.marker([pt.lat, pt.lng], { icon: pinIcon });
+
+          const popupHtml = `
+            <div class="hive-popup-card">
+              <div class="hive-popup-top">
+                <span class="hive-tag ${freqScale.tagClass}">
+                  ⬢ ZONA DE CUIDADO • ${catName}
+                </span>
+                <span class="hive-time-tag">${timeLabel}</span>
+              </div>
+              <div class="hive-popup-title">${pt.name || 'Zona de Cuidado Georreferenciada'}</div>
+              <p class="hive-popup-desc">${pt.description || 'Punto caliente de alta recurrencia reportado en Bogotá.'}</p>
+
+              <div class="hive-freq-meter">
+                <div class="freq-label-row">
+                  <span>Escala de Frecuencia de Eventos:</span>
+                  <strong style="color:${freqScale.color};">${freqScale.label} (${freqScale.pct}%)</strong>
+                </div>
+                <div class="freq-meter-bar">
+                  <div class="freq-meter-fill ${freqScale.fillClass}" style="width:${freqScale.pct}%;"></div>
+                </div>
+              </div>
+
+              <div class="hive-meta-grid">
+                <div><span>Franja Horaria:</span><strong>${pt.hour || 'Todo el día'}</strong></div>
+                <div><span>Recurrencia:</span><strong>${freqScale.estEvents}</strong></div>
+                <div style="grid-column:span 2;"><span>Localidad:</span><strong>${pt.locality || 'Bogotá D.C.'}</strong></div>
+              </div>
+            </div>
+          `;
+
+          hexPolygon.bindPopup(popupHtml);
+          centerMarker.bindPopup(popupHtml);
+
+          hexPolygon.addTo(this.hotspotMarkersLayer);
+          centerMarker.addTo(this.hotspotMarkersLayer);
+        }
+      }
+    });
+
     activeIncidents.forEach(inc => {
-      const weight = inc.status === INCIDENT_STATES.CRITICAL_SWARM ? 1.0 : 0.6;
-      points.push([inc.lat, inc.lng, weight]);
+      const isCrit = inc.status === INCIDENT_STATES.CRITICAL_SWARM;
+      const mainWeight = isCrit ? 1.0 : (inc.reportCount >= 1 ? 0.82 : 0.65);
+      points.push([inc.lat, inc.lng, mainWeight]);
     });
 
     if (points.length === 0) return;
 
     try {
       this.heatLayer = L.heatLayer(points, {
-        radius: 22,
-        blur: 14,
-        maxZoom: 18,
+        radius: 34,
+        blur: 22,
+        maxZoom: 17,
         max: 1.0,
+        minOpacity: 0.30,
         gradient: {
-          0.2: '#00f5a0',
-          0.45: '#ffb800',
-          0.7: '#ff5e3a',
-          1.0: '#ff1744'
+          0.05: '#00f5a0',
+          0.22: '#10b981',
+          0.42: '#eab308',
+          0.62: '#f97316',
+          0.80: '#ef4444',
+          1.00: '#991b1b'
         }
       }).addTo(this.map);
     } catch (e) {
