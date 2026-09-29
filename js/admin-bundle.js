@@ -255,6 +255,7 @@
   };
 
   const INCIDENT_CATEGORIES = {
+    GENERAL: { id: 'GENERAL', name: 'Aviso General', icon: '📢', defaultSeverity: 'MEDIUM' },
     FIGHT: { id: 'FIGHT', name: 'Riña / Pelea', icon: '⚔️', defaultSeverity: 'HIGH' },
     ROBBERY: { id: 'ROBBERY', name: 'Robo / Asalto', icon: '🚨', defaultSeverity: 'CRITICAL' },
     MEDICAL: { id: 'MEDICAL', name: 'Emergencia Médica', icon: '🚑', defaultSeverity: 'HIGH' },
@@ -268,8 +269,12 @@
 
   class SwarmEngine {
     constructor() {
-      this.STORAGE_KEY_INCIDENTS = 'colmena_incidents_active_v2';
-      this.STORAGE_KEY_HISTORY = 'colmena_incidents_history_v2';
+      // Con prefijo "admin_" a propósito: bundle.js (app ciudadana) usa las mismas claves sin prefijo.
+      // Ambas páginas viven en el mismo origen, así que si el mismo navegador abre index.html Y
+      // admin.html (muy probable al probar ambas apps desde el mismo PC), sin este prefijo las dos
+      // copias independientes de SwarmEngine se pisarían el localStorage la una a la otra.
+      this.STORAGE_KEY_INCIDENTS = 'colmena_admin_incidents_active_v2';
+      this.STORAGE_KEY_HISTORY = 'colmena_admin_incidents_history_v2';
 
       this.CLUSTER_RADIUS_METERS = 50;
       this.CRITICAL_RED_DURATION_MS = 8 * 60 * 1000; // 8 minutes active red alarm
@@ -384,18 +389,18 @@
 
     recordDismissedId(id) {
       try {
-        const raw = localStorage.getItem('colmena_dismissed_incident_ids_v2');
+        const raw = localStorage.getItem('colmena_admin_dismissed_incident_ids_v2');
         const set = raw ? JSON.parse(raw) : [];
         if (!set.includes(id)) {
           set.push(id);
-          localStorage.setItem('colmena_dismissed_incident_ids_v2', JSON.stringify(set));
+          localStorage.setItem('colmena_admin_dismissed_incident_ids_v2', JSON.stringify(set));
         }
       } catch (e) {}
     }
 
     getDismissedIds() {
       try {
-        const raw = localStorage.getItem('colmena_dismissed_incident_ids_v2');
+        const raw = localStorage.getItem('colmena_admin_dismissed_incident_ids_v2');
         return raw ? JSON.parse(raw) : [];
       } catch (e) {
         return [];
@@ -420,16 +425,21 @@
         // 1. Critical Swarm & Dispatched: DEGRADE from ROJO to AMARILLO after 8 minutes
         if ((inc.status === INCIDENT_STATES.CRITICAL_SWARM || inc.status === INCIDENT_STATES.DISPATCHED) && ageMs > this.CRITICAL_RED_DURATION_MS) {
           changed = true;
+          const previousStatus = inc.status;
           inc.status = INCIDENT_STATES.PROBING;
           inc.coolingDown = true;
           inc.decayedFromCritical = true;
           inc.coolingStartedAt = now;
           inc.updatedAt = now;
           active.push(inc);
-          // Empuja la degradación a la nube: si no se guarda aquí, el próximo snapshot de Firestore
-          // (que sigue creyendo que el incidente está en CRITICAL_SWARM) revierte este cambio visual
-          // en cualquier dispositivo conectado, dando la sensación de que "hay que recargar" para verlo.
-          try { firebaseSync.saveIncidentToCloud(inc); } catch (e) {}
+          // Si el push a la nube falla (sin internet, pestaña en segundo plano), revierte el estado
+          // local al original en vez de dejar este dispositivo "degradado" mientras Firestore sigue
+          // creyéndolo en rojo para siempre — así el próximo tick de 20s vuelve a intentarlo.
+          firebaseSync.saveIncidentToCloud(inc).catch(() => {
+            inc.status = previousStatus;
+            inc.coolingDown = false;
+            inc.decayedFromCritical = false;
+          });
           return;
         }
 
@@ -439,18 +449,27 @@
           const yellowAgeMs = now - yellowTime;
           if (yellowAgeMs > this.COOLING_YELLOW_DURATION_MS) {
             changed = true;
-            this.history.push({
-              lat: inc.lat,
-              lng: inc.lng,
-              category: inc.category,
-              weight: 0.5,
-              timestamp: inc.createdAt,
-              timeOfDay: new Date(inc.createdAt).getHours() >= 19 || new Date(inc.createdAt).getHours() <= 5 ? 'NIGHT' : 'DAY'
-            });
-            this.recordDismissedId(inc.id);
-            // Borra el documento en Firestore para que TODOS los dispositivos dejen de verlo activo de
-            // inmediato, en vez de depender de que cada uno calcule por su cuenta el mismo vencimiento.
-            try { firebaseSync.deleteIncidentFromCloud(inc.id); } catch (e) {}
+            // El archivado local (dismissedIds + historial) solo se confirma DESPUÉS de que Firestore
+            // acepta el borrado. Antes esto se hacía de inmediato y sin esperar: si el borrado fallaba
+            // (sin red, pestaña en segundo plano), este dispositivo quedaba ciego para siempre a un
+            // incidente que la nube seguía considerando activo — exactamente el "se apagó aquí pero
+            // sigue prendido allá". Mientras tanto se mantiene visible (se reintenta en el próximo tick).
+            active.push(inc);
+            firebaseSync.deleteIncidentFromCloud(inc.id).then(() => {
+              this.history.push({
+                lat: inc.lat,
+                lng: inc.lng,
+                category: inc.category,
+                weight: 0.5,
+                timestamp: inc.createdAt,
+                timeOfDay: new Date(inc.createdAt).getHours() >= 19 || new Date(inc.createdAt).getHours() <= 5 ? 'NIGHT' : 'DAY'
+              });
+              this.saveHistory();
+              this.recordDismissedId(inc.id);
+              this.incidents = this.incidents.filter(x => x.id !== inc.id);
+              this.saveIncidents();
+              syncBus.emit('INCIDENT_MUTATION', { action: 'DECAY_ARCHIVED', incidentId: inc.id });
+            }).catch((err) => console.error('No se pudo archivar el incidente, se reintentará:', inc.id, err));
             return;
           }
         }
@@ -458,8 +477,13 @@
         // 3. Patrol Attended: Active for 20 minutes, then archive
         if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > this.COOLING_YELLOW_DURATION_MS) {
           changed = true;
-          this.recordDismissedId(inc.id);
-          try { firebaseSync.deleteIncidentFromCloud(inc.id); } catch (e) {}
+          active.push(inc);
+          firebaseSync.deleteIncidentFromCloud(inc.id).then(() => {
+            this.recordDismissedId(inc.id);
+            this.incidents = this.incidents.filter(x => x.id !== inc.id);
+            this.saveIncidents();
+            syncBus.emit('INCIDENT_MUTATION', { action: 'DECAY_ARCHIVED', incidentId: inc.id });
+          }).catch((err) => console.error('No se pudo archivar el incidente atendido, se reintentará:', inc.id, err));
           return;
         }
 
@@ -721,6 +745,11 @@
       this.markerLayerGroup.clearLayers();
       this.markersMap.clear();
 
+      // No se usa window.dispatcherApp.getStaffIdentity() aquí a propósito: este método corre durante
+      // la construcción de AdminMap, ANTES de que "window.dispatcherApp = new DispatcherApp()" termine
+      // de asignarse, así que todavía sería undefined en ese momento.
+      const staffId = (window.firebaseAuth && window.firebaseAuth.currentUser && window.firebaseAuth.currentUser.uid) || 'user_admin_super';
+
       const incidents = swarmEngine.loadIncidents();
       incidents.forEach(inc => {
         if (this.categoryFilter !== 'ALL' && inc.category !== this.categoryFilter) return;
@@ -753,6 +782,10 @@
         const icon = L.divIcon({ className: 'incident-leaflet-wrapper', html: markerHtml, iconSize: [44, 44], iconAnchor: [22, 22] });
         const marker = L.marker([inc.lat, inc.lng], { icon });
 
+        const hasConfirmed = inc.reporters && inc.reporters.some(r => r.userId === staffId);
+        const hasRefuted = inc.refutations && inc.refutations.some(r => r.userId === staffId);
+        const refutedCount = (inc.refutations && inc.refutations.length) || 0;
+
         const popupContent = `
           <div class="tactical-popup">
             <div class="popup-header">
@@ -762,13 +795,21 @@
               </span>
             </div>
             <div class="popup-body">
-              <p>👥 <strong>${inc.reportCount} ciudadano(s)</strong> coinciden en 50m.</p>
+              <p>👥 <strong>${inc.reportCount} ciudadano(s)</strong> coinciden en 50m.${refutedCount > 0 ? ` &bull; ⚠️ ${refutedCount} desmentido(s)` : ''}</p>
               <p style="color:var(--text-muted);font-size:0.72rem;">📍 Coordenadas: ${inc.lat.toFixed(4)}, ${inc.lng.toFixed(4)}</p>
               ${inc.reporters[0]?.note ? `<p style="font-style:italic;margin:4px 0;">"${inc.reporters[0].note}"</p>` : ''}
               ${isPatrolAttended ? `<p style="color:#00b0ff;font-weight:700;font-size:0.75rem;">🚓 Patrulla en sitio. Zona calmada sin alarma ruidosa.</p>` : ''}
               ${inc.assignedUnit ? `<p style="color:var(--color-info);font-weight:700;">🚔 ${inc.assignedUnit.code} (ETA ~${inc.assignedUnit.etaMinutes}m)</p>` : ''}
             </div>
-            <div style="display:flex;gap:4px;margin-top:8px;">
+            <div style="display:flex;gap:4px;margin-top:6px;">
+              ${!hasConfirmed && !hasRefuted ? `
+                <button class="btn-tactical" style="flex:1;background:rgba(0,230,118,0.15);border:1px solid #00e676;color:#00e676;font-size:0.7rem;" onclick="window.dispatcherApp.testifyIncident('${inc.id}', true)" title="Confirmar que este incidente es real">👁️ Confirmo</button>
+                <button class="btn-tactical" style="flex:1;background:rgba(255,23,68,0.15);border:1px solid #ff1744;color:#ff5252;font-size:0.7rem;" onclick="window.dispatcherApp.testifyIncident('${inc.id}', false)" title="No hay evidencia de esto">🚫 No hay evidencia</button>
+              ` : `
+                <span style="font-size:0.7rem;font-weight:700;color:${hasConfirmed ? 'var(--color-safe)' : '#ff5252'};">${hasConfirmed ? '👁️ Ya lo confirmaste' : '🚫 Ya indicaste que no hay evidencia'}</span>
+              `}
+            </div>
+            <div style="display:flex;gap:4px;margin-top:6px;">
               ${!isPatrolAttended ? `
                 <button class="btn-tactical" style="background:rgba(0,176,255,0.2);border:1px solid #00b0ff;color:#00b0ff;" onclick="window.dispatcherApp.patrolAttend('${inc.id}')">🚓 Atender (Azul)</button>
               ` : ''}
@@ -956,14 +997,14 @@
       if (!this.isConfigured || !this.db || !incident) return;
       try {
         await this.db.collection('incidents').doc(incident.id).set(incident, { merge: true });
-      } catch (e) {}
+      } catch (e) { console.error('No se pudo guardar el incidente en Firestore (¿reglas publicadas?):', e); }
     }
 
     async deleteIncidentFromCloud(id) {
       if (!this.isConfigured || !this.db || !id) return;
       try {
         await this.db.collection('incidents').doc(id).delete();
-      } catch (e) {}
+      } catch (e) { console.error('No se pudo borrar el incidente en Firestore (¿reglas publicadas?):', e); }
     }
 
     async sendBroadcastToCloud(broadcastData) {
@@ -975,7 +1016,7 @@
       if (this.isConfigured && this.db) {
         try {
           await this.db.collection('broadcasts').add(bc);
-        } catch (e) {}
+        } catch (e) { console.error('No se pudo publicar el aviso de zona en Firestore (¿reglas publicadas?):', e); }
       }
       let local = [];
       try { local = JSON.parse(localStorage.getItem('colmena_local_broadcasts') || '[]'); } catch (e) {}
@@ -1030,28 +1071,82 @@
   if (typeof window !== 'undefined') window.firebaseSync = firebaseSync;
 
   // --- 4.6. FIREBASE AUTHENTICATION SERVICE (ADMIN DIRECTORY) ---
+  // --- 4.6. FIREBASE AUTHENTICATION SERVICE (ADMIN DIRECTORY) ---
   class FirebaseAuthService {
     constructor() {
       this.STORAGE_KEY_ALL_USERS = 'colmena_registered_users_directory';
+      this.STORAGE_KEY_USER = 'colmena_auth_current_user';
+      this.SUPER_ADMIN_EMAIL = 'gabyolarte2017@gmail.com';
     }
 
-    init() {
-      // Connect to Firestore if available
-      if (window.firebaseSync && window.firebaseSync.db) {
+    getFirestoreDb() {
+      if (window.firebaseSync && window.firebaseSync.db) return window.firebaseSync.db;
+      if (typeof window !== 'undefined' && window.firebase && typeof window.firebase.firestore === 'function') {
         try {
-          window.firebaseSync.db.collection('users').onSnapshot((snapshot) => {
-            const cloudUsers = [];
-            snapshot.forEach(doc => {
-              const data = doc.data();
-              data.uid = doc.id;
-              cloudUsers.push(data);
-            });
-            if (cloudUsers.length > 0) {
-              localStorage.setItem(this.STORAGE_KEY_ALL_USERS, JSON.stringify(cloudUsers));
-              if (window.dispatcherApp) window.dispatcherApp.renderUsersDirectory();
+          if (!window.firebase.apps || !window.firebase.apps.length) {
+            const config = window.COLMENA_FIREBASE_CONFIG || null;
+            if (config && config.apiKey) window.firebase.initializeApp(config);
+          }
+          if (window.firebase.apps && window.firebase.apps.length > 0) {
+            return window.firebase.firestore();
+          }
+        } catch (e) {}
+      }
+      return null;
+    }
+
+    init() {}
+
+    initUsersCloudSync() {
+      if (this._usersCloudSyncStarted) return;
+      const db = this.getFirestoreDb();
+      if (!db) {
+        setTimeout(() => this.initUsersCloudSync(), 800);
+        return;
+      }
+      this._usersCloudSyncStarted = true;
+      try {
+        db.collection('users').onSnapshot((snapshot) => {
+          const cloudUsers = [];
+          const localUsers = this.getUsersList();
+          const isSuperAdminEmail = this.SUPER_ADMIN_EMAIL.toLowerCase();
+
+          snapshot.forEach(doc => {
+            const data = doc.data() || {};
+            data.uid = doc.id;
+            const isSuper = (data.email && data.email.toLowerCase() === isSuperAdminEmail) || data.uid === 'user_admin_super';
+
+            if (isSuper) {
+              data.role = 'admin';
+              data.trustScore = 100;
+              data.status = 'active';
+            } else {
+              data.role = data.role || 'citizen';
+              if (typeof data.trustScore !== 'number') {
+                const existingLocal = localUsers.find(lu => lu.uid === data.uid || (lu.email && data.email && lu.email.toLowerCase() === data.email.toLowerCase()));
+                data.trustScore = (existingLocal && typeof existingLocal.trustScore === 'number') ? existingLocal.trustScore : 40;
+              }
+              data.status = data.status || 'active';
             }
-          }, (err) => console.warn('Users cloud sync error:', err));
-        } catch (e) { console.warn('Users listener error:', e); }
+            cloudUsers.push(data);
+          });
+          if (cloudUsers.length === 0) return;
+
+          const merged = cloudUsers.slice();
+          localUsers.forEach(lu => {
+            const existsInCloud = cloudUsers.some(cu =>
+              cu.uid === lu.uid || (cu.email && lu.email && cu.email.toLowerCase() === lu.email.toLowerCase())
+            );
+            if (!existsInCloud) merged.push(lu);
+          });
+
+          this.saveUsersList(merged);
+          try {
+            window.dispatchEvent(new CustomEvent('colmena:users-directory-updated', { detail: { users: merged } }));
+          } catch (e) {}
+        }, (err) => console.warn('Users cloud sync error:', err));
+      } catch (e) {
+        console.warn('initUsersCloudSync error:', e);
       }
     }
 
@@ -1109,6 +1204,118 @@
       try {
         localStorage.setItem(this.STORAGE_KEY_ALL_USERS, JSON.stringify(users));
       } catch (e) {}
+      if (window.syncBus) {
+        window.syncBus.emit('USER_DIRECTORY_UPDATED', { users });
+      }
+    }
+
+    syncUserToCloud(user) {
+      if (!user || !user.uid) return;
+      const db = this.getFirestoreDb();
+      if (!db) return;
+
+      const payload = {
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || 'Ciudadano',
+        photoURL: user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`,
+        role: user.role || 'citizen',
+        trustScore: typeof user.trustScore === 'number' ? user.trustScore : 40,
+        verifiedReports: typeof user.verifiedReports === 'number' ? user.verifiedReports : 0,
+        validationsGiven: typeof user.validationsGiven === 'number' ? user.validationsGiven : 0,
+        status: user.status || 'active',
+        suspendedUntil: (user.suspendedUntil === Infinity || user.suspendedUntil === 'Infinity') ? 9999999999999 : (user.suspendedUntil || null),
+        suspendReason: user.suspendReason || null,
+        updatedAt: Date.now()
+      };
+
+      Object.keys(payload).forEach(k => {
+        if (payload[k] === undefined) delete payload[k];
+      });
+
+      db.collection('users').doc(user.uid).set(payload, { merge: true })
+        .then(() => {
+          console.log(`✅ [Firebase Cloud] Usuario ${user.displayName || user.uid} sincronizado en Firestore (Reputación: ${payload.trustScore})`);
+        })
+        .catch(err => {
+          console.error('Error sincronizando usuario a Firestore:', err);
+        });
+    }
+
+    updateUserRole(uid, newRole) {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      if (user.email && user.email.toLowerCase() === this.SUPER_ADMIN_EMAIL.toLowerCase() && newRole !== 'admin') {
+        return false;
+      }
+      user.role = newRole;
+      this.saveUsersList(users);
+      this.syncUserToCloud(user);
+      return true;
+    }
+
+    suspendUser(uid, durationMs, reason = 'Suspensión temporal por moderación') {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      if (user.email && user.email.toLowerCase() === this.SUPER_ADMIN_EMAIL.toLowerCase()) {
+        return false;
+      }
+      user.status = 'suspended';
+      user.suspendedUntil = (durationMs === Infinity || durationMs === 'Infinity') ? 9999999999999 : (Date.now() + durationMs);
+      user.suspendReason = reason;
+      this.saveUsersList(users);
+      this.syncUserToCloud(user);
+      return true;
+    }
+
+    reactivateUser(uid) {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      user.status = 'active';
+      user.suspendedUntil = null;
+      user.suspendReason = null;
+      this.saveUsersList(users);
+      this.syncUserToCloud(user);
+      return true;
+    }
+
+    disableUser(uid) {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      if (user.email && user.email.toLowerCase() === this.SUPER_ADMIN_EMAIL.toLowerCase()) {
+        return false;
+      }
+      user.status = 'disabled';
+      this.saveUsersList(users);
+      this.syncUserToCloud(user);
+      return true;
+    }
+
+    adjustUserReputation(uid, delta) {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      const current = typeof user.trustScore === 'number' ? user.trustScore : 40;
+      user.trustScore = Math.max(0, Math.min(100, current + delta));
+      this.saveUsersList(users);
+      this.syncUserToCloud(user);
+      return true;
+    }
+
+    setUserReputation(uid, score) {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      const num = parseInt(score, 10);
+      if (isNaN(num)) return false;
+      user.trustScore = Math.max(0, Math.min(100, num));
+      this.saveUsersList(users);
+      this.syncUserToCloud(user);
+      return true;
     }
   }
 
@@ -1136,10 +1343,14 @@
       try { firebaseSync.init(); } catch (e) { console.warn('Sync init warning:', e); }
       try { firebaseAuth.init(); } catch (e) { console.warn('Auth init warning:', e); }
       try { firebaseAuth.initUsersCloudSync(); } catch (e) { console.warn('Users cloud sync init warning:', e); }
+      try { firebaseAuth.startPresenceHeartbeat(); } catch (e) { console.warn('Presence heartbeat init warning:', e); }
       try { if (window.chatService) window.chatService.initCloudSync(); } catch (e) { console.warn('Chat cloud sync init warning:', e); }
       window.addEventListener('colmena:users-directory-updated', () => {
         if (window.dispatcherApp) { try { window.dispatcherApp.renderUsersDirectory(); } catch (e) {} }
       });
+      // Refresca el rótulo "en línea / hace X min" aunque no llegue ningún cambio nuevo de Firestore
+      // (p. ej. un solo ciudadano conectado que aún no cruzó el umbral de desconexión).
+      setInterval(() => { try { this.renderUsersDirectory(); } catch (e) {} }, 30 * 1000);
       try { this.tacticalMap = new AdminMap('admin-map'); } catch (e) { console.error('AdminMap init error:', e); }
       try { this.setupEventListeners(); } catch (e) { console.error('setupEventListeners error:', e); }
       try { this.renderMetrics(); } catch (e) { console.error('renderMetrics error:', e); }
@@ -1155,6 +1366,23 @@
       try { this.setupAdminChat(); } catch (e) { console.error('setupAdminChat error:', e); }
       try { this.setupBulkGenerator(); } catch (e) { console.error('setupBulkGenerator error:', e); }
       try { this.setupAuthorityGate(); } catch (e) { console.error('setupAuthorityGate error:', e); }
+    }
+
+    showToast(message, type = 'info') {
+      let container = document.getElementById('toast-container');
+      if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+      }
+      const toast = document.createElement('div');
+      toast.className = `toast-pill toast-${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.add('toast-fadeout');
+        setTimeout(() => toast.remove(), 400);
+      }, 3500);
     }
 
     setupAuthorityGate() {
@@ -1453,12 +1681,17 @@
         return;
       }
 
+      const staffId = this.getStaffIdentity().uid;
+
       queue.innerHTML = incidents.map(inc => {
         const isCritical = inc.status === INCIDENT_STATES.CRITICAL_SWARM;
         const isDispatched = inc.status === INCIDENT_STATES.DISPATCHED;
         const isPatrolAttended = inc.status === INCIDENT_STATES.PATROL_ATTENDED;
         const cat = INCIDENT_CATEGORIES[inc.category] || INCIDENT_CATEGORIES.FIGHT;
         const timeElapsedMins = Math.max(1, Math.round((Date.now() - inc.createdAt) / 60000));
+        const hasConfirmed = inc.reporters && inc.reporters.some(r => r.userId === staffId);
+        const hasRefuted = inc.refutations && inc.refutations.some(r => r.userId === staffId);
+        const refutedCount = (inc.refutations && inc.refutations.length) || 0;
 
         let cardClass = 'admin-card-probing';
         let statusBadgeClass = 'status-warning';
@@ -1494,12 +1727,27 @@
               <div class="category-row">
                 <span>${isPatrolAttended ? '🚓' : cat.icon}</span>
                 <strong>${cat.name}</strong>
-                <span class="swarm-tally">👥 ${inc.reportCount} ciudadano(s)</span>
+                <span class="swarm-tally">👥 ${inc.reportCount} ciudadano(s)${refutedCount > 0 ? ` &bull; ⚠️ ${refutedCount} desmentido(s)` : ''}</span>
               </div>
               <p style="color:var(--text-dim);font-size:0.7rem;margin-top:2px;">📍 Coordenadas: ${inc.lat.toFixed(4)}, ${inc.lng.toFixed(4)}</p>
               ${inc.reporters[0]?.note ? `<div class="reporter-notes">"${inc.reporters[0].note}"</div>` : ''}
               ${isPatrolAttended ? `<div style="color:#00b0ff;font-weight:700;font-size:0.75rem;margin-top:4px;">🚓 Patrulla en sitio. Zona calmada sin alarma ruidosa.</div>` : ''}
               ${inc.assignedUnit ? `<div class="dispatched-unit-info">🚔 ${inc.assignedUnit.code} (ETA ~${inc.assignedUnit.etaMinutes}m)</div>` : ''}
+            </div>
+
+            <div class="card-testimony-row" style="display:flex;align-items:center;gap:8px;margin:6px 0;">
+              ${!hasConfirmed && !hasRefuted ? `
+                <button class="btn-tactical" style="flex:1;background:rgba(0,230,118,0.12);border:1px solid #00e676;color:#00e676;padding:5px 6px;font-size:0.7rem;" onclick="window.dispatcherApp.testifyIncident('${inc.id}', true)" title="Confirmar que este incidente es real (voto de consenso adicional)">
+                  👁️ Confirmo que es real
+                </button>
+                <button class="btn-tactical" style="flex:1;background:rgba(255,23,68,0.12);border:1px solid #ff1744;color:#ff5252;padding:5px 6px;font-size:0.7rem;" onclick="window.dispatcherApp.testifyIncident('${inc.id}', false)" title="Indicar que no hay evidencia / parece falso">
+                  🚫 No veo evidencia
+                </button>
+              ` : `
+                <span style="font-size:0.7rem;font-weight:700;color:${hasConfirmed ? 'var(--color-safe)' : '#ff5252'};">
+                  ${hasConfirmed ? '👁️ Ya confirmaste este incidente como real' : '🚫 Ya indicaste que no hay evidencia'}
+                </span>
+              `}
             </div>
 
             <div class="card-actions-tactical">
@@ -1583,6 +1831,44 @@
       }
     }
 
+    getStaffIdentity() {
+      const u = window.firebaseAuth && window.firebaseAuth.currentUser;
+      return {
+        uid: (u && u.uid) || 'user_admin_super',
+        trustScore: (u && typeof u.trustScore === 'number') ? u.trustScore : 100
+      };
+    }
+
+    /**
+     * Testimonio de despacho: "confirmo que esto es real" / "no veo evidencia de esto", distinto de
+     * Resolver/Falsa Alarma (que cierran el caso por completo). Es un voto de consenso más, igual que
+     * el de un ciudadano testigo, pero sin exigir estar a 50m (el despachador nunca está físicamente
+     * en el sitio) — se llama a voteIncidentVerdict sin coordenadas para saltar esa restricción.
+     */
+    testifyIncident(id, isReal) {
+      sounds.playClick();
+      const staff = this.getStaffIdentity();
+      const res = swarmEngine.voteIncidentVerdict(id, isReal, null, staff.trustScore);
+      if (res.success) {
+        if (isReal) {
+          sounds.playDispatchChime();
+          if (res.isEscalated) sounds.playCriticalAlarm();
+          if (res.incident) firebaseSync.saveIncidentToCloud(res.incident);
+        } else {
+          sounds.playWarningPing();
+          if (res.isDismissed) {
+            if (firebaseSync.deleteIncidentFromCloud) firebaseSync.deleteIncidentFromCloud(id);
+          } else if (res.incident) {
+            firebaseSync.saveIncidentToCloud(res.incident);
+          }
+        }
+      } else if (res.reason === 'ALREADY_VOTED') {
+        sounds.playWarningPing();
+      }
+      this.renderIncidentQueue();
+      if (this.tacticalMap) this.tacticalMap.renderActiveIncidents();
+    }
+
     /**
      * Refleja en ambos modales (Nuevo Aviso / Inyector Masivo) si ya se eligió una zona a propósito
      * en el mapa, o si por defecto se va a usar el centro actual del viewport del mapa táctico.
@@ -1653,6 +1939,11 @@
           swarmEngine.sendBroadcastAlert(payload);
           firebaseSync.sendBroadcastToCloud(payload);
           if (this.tacticalMap) this.tacticalMap.clearZonePreview();
+          // Sin esto, una zona elegida a mano para ESTE aviso quedaba pegada en this.selectedZoneCenter
+          // y se colaba en el PRÓXIMO aviso o en el Inyector Masivo (ambos modales comparten el mismo
+          // campo), usándose en silencio en vez del centro actual del mapa que el despachador esperaba.
+          this.selectedZoneCenter = null;
+          this.updateZoneReadouts();
           modal.classList.add('hidden');
         }
       });
@@ -1827,6 +2118,8 @@
       if (countCit) countCit.textContent = allUsers.filter(u => (u.role || 'citizen') === 'citizen').length;
       if (countPat) countPat.textContent = allUsers.filter(u => u.role === 'patrol').length;
       if (countAdm) countAdm.textContent = allUsers.filter(u => u.role === 'admin').length;
+      const countOnline = document.getElementById('user-count-online');
+      if (countOnline) countOnline.textContent = allUsers.filter(u => firebaseAuth.isUserOnline(u)).length;
 
       const filtered = allUsers.filter(u => {
         // Role filter
@@ -1849,7 +2142,7 @@
         const isPatrol = u.role === 'patrol';
         const isSuspended = u.status === 'suspended';
         const isDisabled = u.status === 'disabled';
-        const trustVal = typeof u.trustScore === 'number' ? u.trustScore : 75;
+        const trustVal = typeof u.trustScore === 'number' ? u.trustScore : (isAdmin ? 100 : 40);
 
         let roleLabel = '👤 Ciudadano';
         let roleBadgeClass = 'role-citizen';
@@ -1871,6 +2164,13 @@
           statusBadgeClass = 'status-disabled-user';
         }
 
+        // Presencia real (latido lastSeenAt), no solo "tiene cuenta": distingue quién está conectado
+        // ahora mismo de quién simplemente inició sesión alguna vez.
+        const isOnlineNow = firebaseAuth.isUserOnline(u);
+        const presenceLabel = isOnlineNow
+          ? '🟢 En línea'
+          : (u.lastSeenAt ? `⚫ Desconectado (${this.formatRelativeTime(u.lastSeenAt)})` : '⚫ Sin actividad reciente');
+
         return `
           <div class="admin-user-card" id="user-card-${u.uid}">
             <div class="user-card-header">
@@ -1884,6 +2184,9 @@
                   </span>
                   <span class="badge-status ${statusBadgeClass}">
                     ${statusLabel}
+                  </span>
+                  <span class="badge-status ${isOnlineNow ? 'status-active-user' : 'status-disabled-user'}">
+                    ${presenceLabel}
                   </span>
                 </div>
               </div>
@@ -1952,7 +2255,7 @@
               <h4>${user.displayName}</h4>
               <p>📧 ${user.email}</p>
               <div style="display:flex;gap:6px;margin-top:4px;font-size:0.75rem;">
-                <span style="color:var(--color-safe);font-weight:700;">⭐ ${user.trustScore || 100} pts</span>
+                <span style="color:var(--color-safe);font-weight:700;">⭐ ${typeof user.trustScore === 'number' ? user.trustScore : (isSuperAdmin ? 100 : 40)} / 100 pts</span>
                 <span>• Rol: <strong>${user.role?.toUpperCase()}</strong></span>
                 <span>• Estado: <strong style="color:${isSuspended ? 'var(--color-critical)' : (isDisabled ? 'var(--text-muted)' : 'var(--color-safe)')};">${user.status?.toUpperCase()}</strong></span>
               </div>
@@ -1982,6 +2285,16 @@
               <button class="btn-rep-delta pos" onclick="window.dispatcherApp.applyReputationDelta('${user.uid}', 5)">+5 pts</button>
               <button class="btn-rep-delta neg" onclick="window.dispatcherApp.applyReputationDelta('${user.uid}', -5)">-5 pts</button>
               <button class="btn-rep-delta neg" onclick="window.dispatcherApp.applyReputationDelta('${user.uid}', -10)">-10 pts</button>
+            </div>
+            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+              <input type="number" id="input-custom-rep-${user.uid}" min="0" max="100" value="${typeof user.trustScore === 'number' ? user.trustScore : (isSuperAdmin ? 100 : 40)}" class="tactical-input" style="width:85px;text-align:center;padding:7px;font-weight:700;background:#0c1220;border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#fff;">
+              <button class="tactical-btn" style="background:var(--color-accent);color:#fff;font-weight:700;flex:1;padding:7px 12px;border-radius:8px;" onclick="window.dispatcherApp.saveExactReputation('${user.uid}')">💾 Fijar Reputación</button>
+            </div>
+            <div style="display:flex;gap:5px;margin-top:8px;">
+              <button class="tactical-btn" style="flex:1;font-size:0.72rem;padding:5px;background:rgba(16,185,129,0.15);color:var(--color-safe);border:1px solid rgba(16,185,129,0.3);border-radius:6px;" onclick="window.dispatcherApp.setUserReputation('${user.uid}', 100)">⭐ 100 (Máx)</button>
+              <button class="tactical-btn" style="flex:1;font-size:0.72rem;padding:5px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);border-radius:6px;" onclick="window.dispatcherApp.setUserReputation('${user.uid}', 75)">⭐ 75 (Alta)</button>
+              <button class="tactical-btn" style="flex:1;font-size:0.72rem;padding:5px;background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);border-radius:6px;" onclick="window.dispatcherApp.setUserReputation('${user.uid}', 40)">⭐ 40 (Base)</button>
+              <button class="tactical-btn" style="flex:1;font-size:0.72rem;padding:5px;background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);border-radius:6px;" onclick="window.dispatcherApp.setUserReputation('${user.uid}', 10)">⚠️ 10 (Crítica)</button>
             </div>
           </div>
 
@@ -2046,13 +2359,40 @@
       firebaseAuth.updateUserRole(uid, newRole);
       this.openUserModeration(uid);
       this.renderUsersDirectory();
+      this.showToast(`🎭 Rol actualizado a ${newRole.toUpperCase()} (Sincronizado)`, 'info');
     }
 
     applyReputationDelta(uid, delta) {
       sounds.playClick();
       firebaseAuth.adjustUserReputation(uid, delta);
+      const user = firebaseAuth.getUsersList().find(u => u.uid === uid);
       this.openUserModeration(uid);
       this.renderUsersDirectory();
+      const score = (user && typeof user.trustScore === 'number') ? user.trustScore : 40;
+      this.showToast(`⭐ Reputación actualizada a ${score} pts (Guardado en la nube)`, 'info');
+    }
+
+    setUserReputation(uid, score) {
+      sounds.playClick();
+      if (typeof firebaseAuth.setUserReputation === 'function') {
+        firebaseAuth.setUserReputation(uid, score);
+      } else {
+        const users = firebaseAuth.getUsersList();
+        const u = users.find(x => x.uid === uid);
+        const curr = (u && typeof u.trustScore === 'number') ? u.trustScore : 40;
+        firebaseAuth.adjustUserReputation(uid, score - curr);
+      }
+      this.openUserModeration(uid);
+      this.renderUsersDirectory();
+      this.showToast(`⭐ Reputación fijada en ${score} pts (Guardado en la nube)`, 'info');
+    }
+
+    saveExactReputation(uid) {
+      const input = document.getElementById(`input-custom-rep-${uid}`);
+      if (!input) return;
+      const val = parseInt(input.value, 10);
+      if (isNaN(val)) return;
+      this.setUserReputation(uid, Math.max(0, Math.min(100, val)));
     }
 
     applySuspension(uid) {
@@ -2062,6 +2402,7 @@
       firebaseAuth.suspendUser(uid, durationMs);
       this.openUserModeration(uid);
       this.renderUsersDirectory();
+      this.showToast(`⚠️ Cuenta suspendida (Sincronizado)`, 'warning');
     }
 
     liftSuspension(uid) {
@@ -2069,6 +2410,7 @@
       firebaseAuth.reactivateUser(uid);
       this.openUserModeration(uid);
       this.renderUsersDirectory();
+      this.showToast(`✅ Suspensión reactivada (Sincronizado)`, 'info');
     }
 
     disableAccount(uid) {
@@ -2076,6 +2418,7 @@
       firebaseAuth.disableUser(uid);
       this.openUserModeration(uid);
       this.renderUsersDirectory();
+      this.showToast(`⛔ Cuenta inhabilitada (Sincronizado)`, 'critical');
     }
 
     reactivateAccount(uid) {
@@ -2083,6 +2426,7 @@
       firebaseAuth.reactivateUser(uid);
       this.openUserModeration(uid);
       this.renderUsersDirectory();
+      this.showToast(`🟢 Cuenta activada (Sincronizado)`, 'info');
     }
 
     setupAdminChat() {
@@ -2092,9 +2436,32 @@
       const chatInput = document.getElementById('admin-chat-input');
       const priorityRadios = document.querySelectorAll('input[name="admin-priority"]');
 
+      // En móvil el directorio de contactos/canales se muestra como panel alternable a pantalla
+      // completa (ver css/admin.css @media max-width:900px) en vez de estar siempre visible al lado.
+      const chatSidebar = document.querySelector('.admin-chat-sidebar');
+      const chatMain = document.querySelector('.admin-chat-main');
+      const showChatSidebarMobile = () => {
+        chatSidebar?.classList.add('mobile-active');
+        chatMain?.classList.add('mobile-hidden');
+      };
+      const hideChatSidebarMobile = () => {
+        chatSidebar?.classList.remove('mobile-active');
+        chatMain?.classList.remove('mobile-hidden');
+      };
+      document.getElementById('btn-toggle-chat-sidebar')?.addEventListener('click', () => {
+        sounds.playClick();
+        showChatSidebarMobile();
+      });
+      document.getElementById('btn-close-chat-sidebar')?.addEventListener('click', () => {
+        sounds.playClick();
+        hideChatSidebarMobile();
+      });
+      this._hideChatSidebarMobile = hideChatSidebarMobile;
+
       channelBtns.forEach(btn => {
         btn.addEventListener('click', () => {
           sounds.playClick();
+          hideChatSidebarMobile();
           channelBtns.forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
           const channel = btn.dataset.channel;
@@ -2281,6 +2648,7 @@
         this.activeDirectChatUid = uid;
         this.updateAdminChatHeader(null, contact);
         document.querySelectorAll('.admin-chat-channel-item').forEach(b => b.classList.remove('active'));
+        if (this._hideChatSidebarMobile) this._hideChatSidebarMobile();
         this.renderAdminChat();
         this.renderAdminChatContacts();
       }
@@ -2290,6 +2658,17 @@
       return (str || '').replace(/[&<>"']/g, m => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
       }[m]));
+    }
+
+    formatRelativeTime(timestamp) {
+      const diffMs = Date.now() - timestamp;
+      const mins = Math.floor(diffMs / 60000);
+      if (mins < 1) return 'hace instantes';
+      if (mins < 60) return `hace ${mins} min`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `hace ${hours} h`;
+      const days = Math.floor(hours / 24);
+      return `hace ${days} d`;
     }
 
     setupBulkGenerator() {
@@ -2354,8 +2733,13 @@
 
         sounds.playCriticalAlarm();
         closeModal();
-        this.renderIncidentQueue();
+        // Igual que en el modal de Aviso: sin resetear esto, una zona elegida a mano para el Inyector
+        // se quedaba pegada y se colaba en el siguiente Aviso/Inyector, y el marcador 🎯 de vista previa
+        // se quedaba dibujado en el mapa como si la selección siguiera activa.
+        this.selectedZoneCenter = null;
+        this.updateZoneReadouts();
         if (this.tacticalMap) {
+          this.tacticalMap.clearZonePreview();
           this.tacticalMap.renderActiveIncidents();
           this.tacticalMap.renderHeatmap();
         }
@@ -2385,6 +2769,7 @@
         const isActive = bc.active !== false;
         const timeAgo = Math.max(1, Math.round((Date.now() - (bc.timestamp || Date.now())) / 60000));
         const radius = bc.radiusMeters || 50;
+        const cat = INCIDENT_CATEGORIES[bc.category] || INCIDENT_CATEGORIES.GENERAL;
 
         return `
           <div class="admin-broadcast-card ${isActive ? 'active' : 'disabled'}" id="bc-card-${bc.id}" style="background:rgba(18,24,38,0.9);border:1px solid ${isActive ? 'rgba(0,229,255,0.3)' : 'rgba(255,255,255,0.08)'};border-radius:12px;padding:16px;margin-bottom:12px;display:flex;flex-direction:column;gap:8px;">
@@ -2392,8 +2777,8 @@
               <div style="display:flex;align-items:center;gap:10px;">
                 <span style="font-size:1.4rem;">${isActive ? '🟢' : '⚪'}</span>
                 <div>
-                  <strong style="color:#fff;font-size:1rem;">${bc.title || 'Alerta de Zona'}</strong>
-                  <div style="font-size:0.75rem;color:var(--text-muted);">⏱️ Hace ${timeAgo} min &bull; 📍 Perímetro: ${radius}m</div>
+                  <strong style="color:#fff;font-size:1rem;">${cat.icon} ${bc.title || 'Alerta de Zona'}</strong>
+                  <div style="font-size:0.75rem;color:var(--text-muted);">${cat.name} &bull; ⏱️ Hace ${timeAgo} min &bull; 📍 Perímetro: ${radius}m</div>
                 </div>
               </div>
               <span style="background:${isActive ? 'rgba(0,230,118,0.2)' : 'rgba(255,255,255,0.08)'};color:${isActive ? '#00e676' : 'var(--text-muted)'};padding:4px 10px;border-radius:20px;font-size:0.75rem;font-weight:700;">

@@ -21,29 +21,69 @@
     }
 
     /**
+     * Obtiene de forma resiliente la instancia de base de datos de Firestore
+     * independientemente del orden de carga de scripts o wrappers.
+     */
+    getFirestoreDb() {
+      if (window.firebaseSync && window.firebaseSync.db) return window.firebaseSync.db;
+      if (typeof window !== 'undefined' && window.firebase && typeof window.firebase.firestore === 'function') {
+        try {
+          if (!window.firebase.apps || !window.firebase.apps.length) {
+            const config = window.COLMENA_FIREBASE_CONFIG || null;
+            if (config && config.apiKey) window.firebase.initializeApp(config);
+          }
+          if (window.firebase.apps && window.firebase.apps.length > 0) {
+            return window.firebase.firestore();
+          }
+        } catch (e) {}
+      }
+      return null;
+    }
+
+    /**
      * Suscribe el directorio de usuarios a Firestore (colección 'users') para que el panel de
      * administración vea en tiempo real a CUALQUIER ciudadano que inicie sesión desde CUALQUIER
-     * dispositivo, no solo a los que ya iniciaron sesión en el mismo navegador del admin.
-     * Debe llamarse DESPUÉS de que window.firebaseSync ya exista (bundle.js/admin-bundle.js lo crean
-     * al arrancar), por eso no se invoca aquí en el constructor sino explícitamente desde afuera.
+     * dispositivo, conservando los cambios de moderación realizados por el administrador.
      */
     initUsersCloudSync() {
       if (this._usersCloudSyncStarted) return;
-      if (!(window.firebaseSync && window.firebaseSync.db)) return;
+      const db = this.getFirestoreDb();
+      if (!db) {
+        setTimeout(() => this.initUsersCloudSync(), 800);
+        return;
+      }
       this._usersCloudSyncStarted = true;
       try {
-        window.firebaseSync.db.collection('users').onSnapshot((snapshot) => {
+        db.collection('users').onSnapshot((snapshot) => {
           const cloudUsers = [];
+          const localUsers = this.getUsersList();
+          const isSuperAdminEmail = this.SUPER_ADMIN_EMAIL.toLowerCase();
+
           snapshot.forEach(doc => {
             const data = doc.data() || {};
             data.uid = doc.id;
+            const isSuper = (data.email && data.email.toLowerCase() === isSuperAdminEmail) || data.uid === 'user_admin_super';
+
+            if (isSuper) {
+              data.role = 'admin';
+              data.trustScore = 100;
+              data.status = 'active';
+            } else {
+              data.role = data.role || 'citizen';
+              // Si Firestore tiene trustScore numérico asignado, se respeta tal cual.
+              // Si falta o no es número, revisamos si localmente ya existía un trustScore o usamos 40 base.
+              if (typeof data.trustScore !== 'number') {
+                const existingLocal = localUsers.find(lu => lu.uid === data.uid || (lu.email && data.email && lu.email.toLowerCase() === data.email.toLowerCase()));
+                data.trustScore = (existingLocal && typeof existingLocal.trustScore === 'number') ? existingLocal.trustScore : 40;
+              }
+              data.status = data.status || 'active';
+            }
             cloudUsers.push(data);
           });
           if (cloudUsers.length === 0) return;
 
           // La nube manda para cualquier usuario que ya tenga documento ahí; conservamos localmente
           // solo las cuentas de demostración que aún no existen en Firestore (para no perder el directorio de ejemplo).
-          const localUsers = this.getUsersList();
           const merged = cloudUsers.slice();
           localUsers.forEach(lu => {
             const existsInCloud = cloudUsers.some(cu =>
@@ -59,6 +99,46 @@
         }, (err) => console.warn('Users cloud sync error:', err));
       } catch (e) {
         console.warn('initUsersCloudSync error:', e);
+      }
+    }
+
+    /**
+     * Umbral para considerar a alguien "en línea ahora": si su último latido (lastSeenAt) es más
+     * reciente que esto, se muestra conectado; si no, se muestra su "última vez" relativa.
+     */
+    static get ONLINE_THRESHOLD_MS() { return 2 * 60 * 1000; }
+
+    isUserOnline(user) {
+      return !!(user && user.lastSeenAt && (Date.now() - user.lastSeenAt) < FirebaseAuthService.ONLINE_THRESHOLD_MS);
+    }
+
+    /**
+     * Antes no existía NINGÚN mecanismo de presencia: el directorio del admin solo mostraba cuentas
+     * que alguna vez iniciaron sesión, sin forma de distinguir quién está conectado AHORA MISMO. Este
+     * latido escribe lastSeenAt en el documento Firestore del usuario cada pocos segundos mientras la
+     * pestaña está abierta y visible, para que el panel de admin pueda calcular "en línea" de verdad.
+     */
+    startPresenceHeartbeat() {
+      if (this._presenceHeartbeatStarted) return;
+      this._presenceHeartbeatStarted = true;
+
+      const beat = () => {
+        if (!this.currentUser || !this.currentUser.uid) return;
+        this.currentUser.lastSeenAt = Date.now();
+        try { localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser)); } catch (e) {}
+        if (window.firebaseSync && window.firebaseSync.db) {
+          window.firebaseSync.db.collection('users').doc(this.currentUser.uid)
+            .set({ lastSeenAt: this.currentUser.lastSeenAt }, { merge: true })
+            .catch((err) => console.error('Presence heartbeat failed (¿reglas de Firestore publicadas?):', err));
+        }
+      };
+
+      beat();
+      setInterval(beat, 45 * 1000);
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') beat();
+        });
       }
     }
 
@@ -131,13 +211,46 @@
         photoURL: firebaseUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${firebaseUser.uid}`,
         role: isSuper ? 'admin' : (existing && existing.role ? existing.role : 'citizen'),
         // Usuario nuevo = reputación baja/inicial; un usuario existente conserva lo que ya ganó (o lo que el admin le asignó)
-        trustScore: isSuper ? 100 : (existing ? (existing.trustScore ?? 40) : 40),
+        trustScore: isSuper ? 100 : (existing && typeof existing.trustScore === 'number' ? existing.trustScore : 40),
         verifiedReports: existing ? (existing.verifiedReports || 0) : 0,
         validationsGiven: existing ? (existing.validationsGiven || 0) : 0,
         status: existing ? (existing.status || 'active') : 'active',
         lastLoginAt: Date.now()
       };
       this.setCurrentUser(userProfile);
+
+      // Verificación en la nube para sincronizar reputación o rol si fue moderado desde el panel de admin
+      const db = this.getFirestoreDb();
+      if (db && firebaseUser && firebaseUser.uid) {
+        db.collection('users').doc(firebaseUser.uid).get().then(docSnap => {
+          if (docSnap.exists) {
+            const cData = docSnap.data();
+            if (cData && this.currentUser && this.currentUser.uid === firebaseUser.uid) {
+              let updated = false;
+              if (typeof cData.trustScore === 'number' && this.currentUser.trustScore !== cData.trustScore) {
+                this.currentUser.trustScore = cData.trustScore;
+                updated = true;
+              }
+              if (cData.role && this.currentUser.role !== cData.role) {
+                this.currentUser.role = cData.role;
+                updated = true;
+              }
+              if (cData.status && this.currentUser.status !== cData.status) {
+                this.currentUser.status = cData.status;
+                updated = true;
+              }
+              if (updated) {
+                try { localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser)); } catch (e) {}
+                this.saveToUsersDirectory(this.currentUser);
+                if (window.syncBus) {
+                  window.syncBus.emit('AUTH_STATE_CHANGED', { user: this.currentUser });
+                }
+              }
+            }
+          }
+        }).catch(() => {});
+      }
+
       return userProfile;
     }
 
@@ -371,15 +484,69 @@
       let users = this.getUsersList();
       const idx = users.findIndex(u => (u.email && u.email.toLowerCase() === user.email.toLowerCase()) || u.uid === user.uid);
       if (idx >= 0) {
-        users[idx] = { ...users[idx], ...user, lastLoginAt: Date.now() };
+        const prev = users[idx];
+        users[idx] = {
+          ...prev,
+          ...user,
+          // Preservar la reputación existente si la que viene es el default 40
+          trustScore: (typeof user.trustScore === 'number' && user.trustScore !== 40)
+            ? user.trustScore
+            : (typeof prev.trustScore === 'number' ? prev.trustScore : (user.trustScore ?? 40)),
+          role: (prev.role && user.role === 'citizen' && prev.role !== 'citizen') ? prev.role : (user.role || prev.role || 'citizen'),
+          status: (prev.status && prev.status !== 'active') ? prev.status : (user.status || 'active'),
+          lastLoginAt: Date.now()
+        };
       } else {
-        users.push({ ...user, createdAt: Date.now(), lastLoginAt: Date.now() });
+        users.push({ ...user, createdAt: user.createdAt || Date.now(), lastLoginAt: Date.now() });
       }
       this.saveUsersList(users);
 
-      if (window.firebaseSync && window.firebaseSync.db) {
-        window.firebaseSync.db.collection('users').doc(user.uid).set(user, { merge: true }).catch(() => {});
+      const db = this.getFirestoreDb();
+      if (db && user && user.uid) {
+        const payload = { ...user };
+        Object.keys(payload).forEach(k => {
+          if (payload[k] === undefined) delete payload[k];
+        });
+        db.collection('users').doc(user.uid).set(payload, { merge: true })
+          .catch((err) => console.error('No se pudo sincronizar el usuario a Firestore (¿reglas publicadas?):', err));
       }
+    }
+
+    /**
+     * Sincroniza un usuario directamente hacia la colección 'users' de Firestore
+     * para que cualquier cambio de reputación, rol o estado persista en la nube y sobreviva a reinicios.
+     */
+    syncUserToCloud(user) {
+      if (!user || !user.uid) return;
+      const db = this.getFirestoreDb();
+      if (!db) return;
+
+      const payload = {
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || 'Ciudadano',
+        photoURL: user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`,
+        role: user.role || 'citizen',
+        trustScore: typeof user.trustScore === 'number' ? user.trustScore : 40,
+        verifiedReports: typeof user.verifiedReports === 'number' ? user.verifiedReports : 0,
+        validationsGiven: typeof user.validationsGiven === 'number' ? user.validationsGiven : 0,
+        status: user.status || 'active',
+        suspendedUntil: (user.suspendedUntil === Infinity || user.suspendedUntil === 'Infinity') ? 9999999999999 : (user.suspendedUntil || null),
+        suspendReason: user.suspendReason || null,
+        updatedAt: Date.now()
+      };
+
+      Object.keys(payload).forEach(k => {
+        if (payload[k] === undefined) delete payload[k];
+      });
+
+      db.collection('users').doc(user.uid).set(payload, { merge: true })
+        .then(() => {
+          console.log(`✅ [Firebase Cloud] Usuario ${user.displayName || user.uid} sincronizado en Firestore (Reputación: ${payload.trustScore}, Rol: ${payload.role}, Estado: ${payload.status})`);
+        })
+        .catch(err => {
+          console.error('Error sincronizando usuario a Firestore:', err);
+        });
     }
 
     saveUsersList(users) {
@@ -490,8 +657,9 @@
       this.saveUsersList(users);
       if (this.currentUser && this.currentUser.uid === uid) {
         this.currentUser.role = newRole;
-        localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser));
+        try { localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser)); } catch (e) {}
       }
+      this.syncUserToCloud(user);
       return true;
     }
 
@@ -503,14 +671,15 @@
         return false; // Cannot suspend superadmin
       }
       user.status = 'suspended';
-      user.suspendedUntil = durationMs === Infinity ? Infinity : (Date.now() + durationMs);
+      user.suspendedUntil = (durationMs === Infinity || durationMs === 'Infinity') ? 9999999999999 : (Date.now() + durationMs);
       user.suspendReason = reason;
       this.saveUsersList(users);
       if (this.currentUser && this.currentUser.uid === uid) {
         this.currentUser.status = 'suspended';
         this.currentUser.suspendedUntil = user.suspendedUntil;
-        localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser));
+        try { localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser)); } catch (e) {}
       }
+      this.syncUserToCloud(user);
       return true;
     }
 
@@ -525,8 +694,9 @@
       if (this.currentUser && this.currentUser.uid === uid) {
         this.currentUser.status = 'active';
         this.currentUser.suspendedUntil = null;
-        localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser));
+        try { localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser)); } catch (e) {}
       }
+      this.syncUserToCloud(user);
       return true;
     }
 
@@ -541,8 +711,9 @@
       this.saveUsersList(users);
       if (this.currentUser && this.currentUser.uid === uid) {
         this.currentUser.status = 'disabled';
-        localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser));
+        try { localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser)); } catch (e) {}
       }
+      this.syncUserToCloud(user);
       return true;
     }
 
@@ -550,12 +721,30 @@
       const users = this.getUsersList();
       const user = users.find(u => u.uid === uid);
       if (!user) return false;
-      user.trustScore = Math.max(0, Math.min(100, (typeof user.trustScore === 'number' ? user.trustScore : 75) + delta));
+      const current = typeof user.trustScore === 'number' ? user.trustScore : 40;
+      user.trustScore = Math.max(0, Math.min(100, current + delta));
       this.saveUsersList(users);
       if (this.currentUser && this.currentUser.uid === uid) {
         this.currentUser.trustScore = user.trustScore;
-        localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser));
+        try { localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser)); } catch (e) {}
       }
+      this.syncUserToCloud(user);
+      return true;
+    }
+
+    setUserReputation(uid, score) {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      const num = parseInt(score, 10);
+      if (isNaN(num)) return false;
+      user.trustScore = Math.max(0, Math.min(100, num));
+      this.saveUsersList(users);
+      if (this.currentUser && this.currentUser.uid === uid) {
+        this.currentUser.trustScore = user.trustScore;
+        try { localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser)); } catch (e) {}
+      }
+      this.syncUserToCloud(user);
       return true;
     }
 

@@ -474,6 +474,7 @@
   };
 
   const INCIDENT_CATEGORIES = {
+    GENERAL: { id: 'GENERAL', name: 'Aviso General', icon: '📢' },
     FIGHT: { id: 'FIGHT', name: 'Riña / Pelea', icon: '⚔️' },
     ROBBERY: { id: 'ROBBERY', name: 'Robo / Asalto', icon: '🚨' },
     MEDICAL: { id: 'MEDICAL', name: 'Emergencia Médica', icon: '🚑' },
@@ -853,16 +854,21 @@
         // 1. Critical Swarm & Dispatched: DEGRADE from ROJO to AMARILLO after 8 minutes
         if ((inc.status === INCIDENT_STATES.CRITICAL_SWARM || inc.status === INCIDENT_STATES.DISPATCHED) && ageMs > this.CRITICAL_RED_DURATION_MS) {
           changed = true;
+          const previousStatus = inc.status;
           inc.status = INCIDENT_STATES.PROBING;
           inc.coolingDown = true;
           inc.decayedFromCritical = true;
           inc.coolingStartedAt = now;
           inc.updatedAt = now;
           active.push(inc);
-          // Empuja la degradación a la nube: si no se guarda aquí, el próximo snapshot de Firestore
-          // (que sigue creyendo que el incidente está en CRITICAL_SWARM) revierte este cambio visual
-          // en cualquier dispositivo conectado, dando la sensación de que "hay que recargar" para verlo.
-          try { firebaseSync.saveIncidentToCloud(inc); } catch (e) {}
+          // Si el push a la nube falla (sin internet, pestaña en segundo plano), revierte el estado
+          // local al original en vez de dejar este dispositivo "degradado" mientras Firestore sigue
+          // creyéndolo en rojo para siempre — así el próximo tick de 20s vuelve a intentarlo.
+          firebaseSync.saveIncidentToCloud(inc).catch(() => {
+            inc.status = previousStatus;
+            inc.coolingDown = false;
+            inc.decayedFromCritical = false;
+          });
           return;
         }
 
@@ -872,18 +878,27 @@
           const yellowAgeMs = now - yellowTime;
           if (yellowAgeMs > this.COOLING_YELLOW_DURATION_MS) {
             changed = true;
-            this.history.push({
-              lat: inc.lat,
-              lng: inc.lng,
-              category: inc.category,
-              weight: 0.5,
-              timestamp: inc.createdAt,
-              timeOfDay: new Date(inc.createdAt).getHours() >= 19 || new Date(inc.createdAt).getHours() <= 5 ? 'NIGHT' : 'DAY'
-            });
-            this.recordDismissedId(inc.id);
-            // Borra el documento en Firestore para que TODOS los dispositivos dejen de verlo activo de
-            // inmediato, en vez de depender de que cada uno calcule por su cuenta el mismo vencimiento.
-            try { firebaseSync.deleteIncidentFromCloud(inc.id); } catch (e) {}
+            // El archivado local (dismissedIds + historial) solo se confirma DESPUÉS de que Firestore
+            // acepta el borrado. Antes esto se hacía de inmediato y sin esperar: si el borrado fallaba
+            // (sin red, pestaña en segundo plano), este dispositivo quedaba ciego para siempre a un
+            // incidente que la nube seguía considerando activo — exactamente el "se apagó aquí pero
+            // sigue prendido allá". Mientras tanto se mantiene visible (se reintenta en el próximo tick).
+            active.push(inc);
+            firebaseSync.deleteIncidentFromCloud(inc.id).then(() => {
+              this.history.push({
+                lat: inc.lat,
+                lng: inc.lng,
+                category: inc.category,
+                weight: 0.5,
+                timestamp: inc.createdAt,
+                timeOfDay: new Date(inc.createdAt).getHours() >= 19 || new Date(inc.createdAt).getHours() <= 5 ? 'NIGHT' : 'DAY'
+              });
+              this.saveHistory();
+              this.recordDismissedId(inc.id);
+              this.incidents = this.incidents.filter(x => x.id !== inc.id);
+              this.saveIncidents();
+              syncBus.emit('INCIDENT_MUTATION', { action: 'DECAY_ARCHIVED', incidentId: inc.id });
+            }).catch((err) => console.error('No se pudo archivar el incidente, se reintentará:', inc.id, err));
             return;
           }
         }
@@ -891,8 +906,13 @@
         // 3. Patrol Attended: Active for 20 minutes, then archive
         if (inc.status === INCIDENT_STATES.PATROL_ATTENDED && ageMs > this.COOLING_YELLOW_DURATION_MS) {
           changed = true;
-          this.recordDismissedId(inc.id);
-          try { firebaseSync.deleteIncidentFromCloud(inc.id); } catch (e) {}
+          active.push(inc);
+          firebaseSync.deleteIncidentFromCloud(inc.id).then(() => {
+            this.recordDismissedId(inc.id);
+            this.incidents = this.incidents.filter(x => x.id !== inc.id);
+            this.saveIncidents();
+            syncBus.emit('INCIDENT_MUTATION', { action: 'DECAY_ARCHIVED', incidentId: inc.id });
+          }).catch((err) => console.error('No se pudo archivar el incidente atendido, se reintentará:', inc.id, err));
           return;
         }
 
@@ -965,6 +985,7 @@
       this.center = options.center || [geoResolver.currentCoords.lat, geoResolver.currentCoords.lng];
       this.userLocation = { lat: this.center[0], lng: this.center[1] };
       this.timeFilter = 'ALL';
+      this.heatEnabled = true;
       this.hasAutoCentered = false;
       this.onGeofenceChange = options.onGeofenceChange || (() => {});
       this.onMapClickCallback = options.onMapClickCallback || null;
@@ -1109,6 +1130,10 @@
         this.map.removeLayer(this.heatLayer);
         this.heatLayer = null;
       }
+      // El botón "🔥 Capa de Calor" está pensado para mostrar/ocultar esta capa por completo; antes su
+      // clic solo cambiaba el filtro día/noche (this.timeFilter) sin afectar la visibilidad real, así
+      // que "apagarlo" no ocultaba nada, y confundía con la posibilidad de que en el celular no se viera.
+      if (!this.heatEnabled) return;
 
       const rawHistory = swarmEngine.loadHistory();
       const activeIncidents = swarmEngine.loadIncidents();
@@ -1140,6 +1165,11 @@
 
     setTimeFilter(filter) {
       this.timeFilter = filter;
+      this.renderHeatmap();
+    }
+
+    setHeatEnabled(enabled) {
+      this.heatEnabled = enabled;
       this.renderHeatmap();
     }
 
@@ -1176,7 +1206,44 @@
         `;
         const icon = L.divIcon({ className: 'incident-leaflet-wrapper', html: markerHtml, iconSize: [44, 44], iconAnchor: [22, 22] });
         const marker = L.marker([inc.lat, inc.lng], { icon });
-        
+
+        // Mismo criterio de "ya voté" que ya usaba la lista/feed de alertas (renderFeed), para que
+        // confirmar/desmentir se comporte igual sin importar si lo haces desde el mapa o desde el panel.
+        const myId = syncBus.getSenderId();
+        const hasConfirmed = inc.reporters && inc.reporters.some(r => r.userId === myId);
+        const hasRefuted = inc.refutations && inc.refutations.some(r => r.userId === myId);
+        const hasVoted = hasConfirmed || hasRefuted;
+        const distM = Math.round(swarmEngine.calculateDistanceMeters(this.userLocation.lat, this.userLocation.lng, inc.lat, inc.lng));
+        const isOnStreet = distM <= 50;
+
+        let witnessActionHtml;
+        if (!window.citizenApp || !window.citizenApp.currentUser) {
+          witnessActionHtml = `
+            <button class="btn-popup-witness" onclick="document.getElementById('marketing-login-modal')?.classList.remove('hidden')" style="width:100%;background:rgba(255,184,0,0.08);border:1px dashed rgba(255,184,0,0.4);color:var(--color-warning);padding:6px;border-radius:4px;font-weight:700;font-size:0.7rem;cursor:pointer;margin-top:8px;">
+              🔒 Inicia sesión para confirmar o desmentir (+5 pts)
+            </button>`;
+        } else if (hasVoted) {
+          witnessActionHtml = `
+            <div style="margin-top:8px;font-size:0.72rem;font-weight:700;color:${hasConfirmed ? 'var(--color-safe)' : '#ff5252'};">
+              ${hasConfirmed ? '✅ Ya confirmaste que es REAL' : '❌ Ya indicaste que es FALSO'}
+            </div>`;
+        } else if (!isOnStreet) {
+          witnessActionHtml = `
+            <div style="margin-top:8px;font-size:0.68rem;color:var(--text-muted);background:rgba(255,255,255,0.05);padding:6px;border-radius:4px;">
+              👁️ Estás a ${distM}m. Calificación reservada a vecinos presentes en la misma calle (≤50m).
+            </div>`;
+        } else {
+          witnessActionHtml = `
+            <div style="display:flex;gap:6px;margin-top:8px;">
+              <button class="btn-popup-witness" onclick="if(window.citizenApp) window.citizenApp.voteIncident('${inc.id}', true)" style="flex:1; background:rgba(0,230,118,0.2); border:1px solid #00e676; color:#00e676; padding:6px; border-radius:4px; font-weight:800; font-size:0.72rem; cursor:pointer;">
+                ✅ Es Real
+              </button>
+              <button class="btn-popup-witness" onclick="if(window.citizenApp) window.citizenApp.voteIncident('${inc.id}', false)" style="flex:1; background:rgba(255,23,68,0.2); border:1px solid #ff1744; color:#ff5252; padding:6px; border-radius:4px; font-weight:800; font-size:0.72rem; cursor:pointer;">
+                ❌ Es Falso
+              </button>
+            </div>`;
+        }
+
         marker.bindPopup(`
           <div class="tactical-popup">
             <div class="popup-header">
@@ -1187,23 +1254,10 @@
             </div>
             <div class="popup-body">
               <p>👥 <strong>${inc.reportCount} confirmación(es)</strong>${(inc.refutations && inc.refutations.length) ? ` &bull; ⚠️ ${inc.refutations.length} desmentidos` : ''}</p>
-              <p style="color:var(--text-muted);font-size:0.7rem;">📍 A ${Math.round(swarmEngine.calculateDistanceMeters(this.userLocation.lat, this.userLocation.lng, inc.lat, inc.lng))}m de tu ubicación</p>
+              <p style="color:var(--text-muted);font-size:0.7rem;">📍 A ${distM}m de tu ubicación</p>
               ${inc.reporters[0]?.note ? `<p style="font-style:italic;margin-top:4px;color:#fff;">"${inc.reporters[0].note}"</p>` : ''}
               ${isPatrolAttended ? `<p style="color:#00b0ff;font-weight:700;font-size:0.75rem;margin-top:4px;">🚓 Patrulla presente en el cuadrante. Zona asegurada.</p>` : ''}
-              ${(swarmEngine.calculateDistanceMeters(this.userLocation.lat, this.userLocation.lng, inc.lat, inc.lng) <= 50) ? `
-                <div style="display:flex;gap:6px;margin-top:8px;">
-                  <button class="btn-popup-witness" onclick="if(window.citizenApp) window.citizenApp.voteIncident('${inc.id}', true)" style="flex:1; background:rgba(0,230,118,0.2); border:1px solid #00e676; color:#00e676; padding:6px; border-radius:4px; font-weight:800; font-size:0.72rem; cursor:pointer;">
-                    ✅ Es Real
-                  </button>
-                  <button class="btn-popup-witness" onclick="if(window.citizenApp) window.citizenApp.voteIncident('${inc.id}', false)" style="flex:1; background:rgba(255,23,68,0.2); border:1px solid #ff1744; color:#ff5252; padding:6px; border-radius:4px; font-weight:800; font-size:0.72rem; cursor:pointer;">
-                    ❌ Es Falso
-                  </button>
-                </div>
-              ` : `
-                <div style="margin-top:8px;font-size:0.68rem;color:var(--text-muted);background:rgba(255,255,255,0.05);padding:6px;border-radius:4px;">
-                  👁️ Estás a ${Math.round(swarmEngine.calculateDistanceMeters(this.userLocation.lat, this.userLocation.lng, inc.lat, inc.lng))}m. Calificación reservada a vecinos presentes en la misma calle (≤50m).
-                </div>
-              `}
+              ${witnessActionHtml}
             </div>
           </div>
         `);
@@ -1937,14 +1991,14 @@
       if (!this.isConfigured || !this.db || !incident) return;
       try {
         await this.db.collection('incidents').doc(incident.id).set(incident, { merge: true });
-      } catch (e) {}
+      } catch (e) { console.error('No se pudo guardar el incidente en Firestore (¿reglas publicadas?):', e); }
     }
 
     async deleteIncidentFromCloud(id) {
       if (!this.isConfigured || !this.db || !id) return;
       try {
         await this.db.collection('incidents').doc(id).delete();
-      } catch (e) {}
+      } catch (e) { console.error('No se pudo borrar el incidente en Firestore (¿reglas publicadas?):', e); }
     }
 
     updateCloudStatusBadge(isOnline) {
@@ -2319,6 +2373,90 @@
       return initialDirectory;
     }
 
+    getFirestoreDb() {
+      if (window.firebaseSync && window.firebaseSync.db) return window.firebaseSync.db;
+      if (typeof window !== 'undefined' && window.firebase && typeof window.firebase.firestore === 'function') {
+        try {
+          if (!window.firebase.apps || !window.firebase.apps.length) {
+            const config = window.COLMENA_FIREBASE_CONFIG || null;
+            if (config && config.apiKey) window.firebase.initializeApp(config);
+          }
+          if (window.firebase.apps && window.firebase.apps.length > 0) {
+            return window.firebase.firestore();
+          }
+        } catch (e) {}
+      }
+      return null;
+    }
+
+    syncUserToCloud(user) {
+      if (!user || !user.uid) return;
+      const db = this.getFirestoreDb();
+      if (!db) return;
+
+      const payload = {
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || 'Ciudadano',
+        photoURL: user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.uid}`,
+        role: user.role || 'citizen',
+        trustScore: typeof user.trustScore === 'number' ? user.trustScore : 40,
+        verifiedReports: typeof user.verifiedReports === 'number' ? user.verifiedReports : 0,
+        validationsGiven: typeof user.validationsGiven === 'number' ? user.validationsGiven : 0,
+        status: user.status || 'active',
+        suspendedUntil: (user.suspendedUntil === Infinity || user.suspendedUntil === 'Infinity') ? 9999999999999 : (user.suspendedUntil || null),
+        suspendReason: user.suspendReason || null,
+        updatedAt: Date.now()
+      };
+
+      Object.keys(payload).forEach(k => {
+        if (payload[k] === undefined) delete payload[k];
+      });
+
+      db.collection('users').doc(user.uid).set(payload, { merge: true })
+        .then(() => {
+          console.log(`✅ [Firebase Cloud] Usuario ${user.displayName || user.uid} sincronizado en Firestore (Reputación: ${payload.trustScore})`);
+        })
+        .catch(err => {
+          console.error('Error sincronizando usuario a Firestore:', err);
+        });
+    }
+
+    adjustUserReputation(uid, delta) {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      const current = typeof user.trustScore === 'number' ? user.trustScore : 40;
+      user.trustScore = Math.max(0, Math.min(100, current + delta));
+      try {
+        localStorage.setItem(this.STORAGE_KEY_ALL_USERS, JSON.stringify(users));
+      } catch (e) {}
+      if (this.currentUser && this.currentUser.uid === uid) {
+        this.currentUser.trustScore = user.trustScore;
+        try { localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser)); } catch (e) {}
+      }
+      this.syncUserToCloud(user);
+      return true;
+    }
+
+    setUserReputation(uid, score) {
+      const users = this.getUsersList();
+      const user = users.find(u => u.uid === uid);
+      if (!user) return false;
+      const num = parseInt(score, 10);
+      if (isNaN(num)) return false;
+      user.trustScore = Math.max(0, Math.min(100, num));
+      try {
+        localStorage.setItem(this.STORAGE_KEY_ALL_USERS, JSON.stringify(users));
+      } catch (e) {}
+      if (this.currentUser && this.currentUser.uid === uid) {
+        this.currentUser.trustScore = user.trustScore;
+        try { localStorage.setItem(this.STORAGE_KEY_USER, JSON.stringify(this.currentUser)); } catch (e) {}
+      }
+      this.syncUserToCloud(user);
+      return true;
+    }
+
     onAuthStateChanged(callback) {
       this.authStateListeners.push(callback);
       callback(this.currentUser);
@@ -2351,6 +2489,7 @@
     init() {
       try { firebaseSync.init(); } catch (e) { console.warn('Sync init warning:', e); }
       try { firebaseAuth.initUsersCloudSync(); } catch (e) { console.warn('Users cloud sync init warning:', e); }
+      try { firebaseAuth.startPresenceHeartbeat(); } catch (e) { console.warn('Presence heartbeat init warning:', e); }
       try { if (window.chatService) window.chatService.initCloudSync(); } catch (e) { console.warn('Chat cloud sync init warning:', e); }
       try { this.setupAuth(); } catch (e) { console.warn('Auth setup warning:', e); }
       try {
@@ -3030,7 +3169,7 @@
         btnToggleHeatmap.classList.toggle('active');
         const isActive = btnToggleHeatmap.classList.contains('active');
         if (this.riskMap) {
-          this.riskMap.setTimeFilter(isActive ? 'ALL' : 'NIGHT');
+          this.riskMap.setHeatEnabled(isActive);
         }
         this.showToast(isActive ? '🔥 Capa de Calor activada' : '🔥 Capa de Calor pausada', 'info');
       });
@@ -3626,6 +3765,9 @@
         sounds.playCriticalAlarm();
         const modal = document.getElementById('broadcast-alert-modal');
         if (modal) {
+          const cat = INCIDENT_CATEGORIES[bc.category] || INCIDENT_CATEGORIES.GENERAL;
+          const iconEl = document.getElementById('broadcast-modal-icon');
+          if (iconEl) iconEl.textContent = cat.icon;
           document.getElementById('broadcast-modal-title').textContent = bc.title;
           document.getElementById('broadcast-modal-msg').textContent = bc.message;
           modal.classList.remove('hidden');

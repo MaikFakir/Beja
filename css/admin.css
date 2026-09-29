@@ -822,6 +822,11 @@ html, body.admin-body {
   margin-top: 2px;
 }
 
+.users-online-readout {
+  color: var(--color-safe, #00e676) !important;
+  font-weight: 700;
+}
+
 .users-search-box {
   width: min(340px, 100%);
 }
@@ -1140,12 +1145,39 @@ html, body.admin-body {
   display: none !important;
 }
 
+.admin-chat-sidebar-toggle,
+.admin-chat-sidebar-back {
+  display: none;
+}
+
+/* El directorio de contactos (canales + "Directorio por Roles") vivía en un <aside> que se ocultaba
+   por completo con display:none en cualquier pantalla <=900px (todo celular y muchas tablets), sin
+   ningún botón para volver a mostrarlo — el despachador no tenía forma de elegir a un ciudadano ni de
+   cambiar de canal desde el móvil. Ahora se comporta como un panel alternable (mismo patrón que el
+   selector Mapa/Cola): oculto por defecto, se muestra a pantalla completa con .mobile-active. */
 @media (max-width: 900px) {
   .admin-chat-panel {
     grid-template-columns: 1fr;
+    position: relative;
+  }
+  .admin-chat-sidebar-toggle,
+  .admin-chat-sidebar-back {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
   }
   .admin-chat-sidebar {
     display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    width: 100%;
+  }
+  .admin-chat-sidebar.mobile-active {
+    display: flex !important;
+  }
+  .admin-chat-main.mobile-hidden {
+    display: none !important;
   }
 }
 
@@ -1501,4 +1533,60 @@ html, body.admin-body {
 .leaflet-container {
   background: #070a12 !important;
 }
+
+/* Toast Notification Feedback */
+#toast-container {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 999999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast-pill {
+  pointer-events: auto;
+  padding: 10px 18px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(14px);
+  animation: adminToastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.3s, transform 0.3s;
+}
+
+@keyframes adminToastIn {
+  from { opacity: 0; transform: translateY(-12px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.toast-fadeout {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.95);
+}
+
+.toast-info {
+  background: rgba(14, 165, 233, 0.95);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.toast-warning {
+  background: rgba(245, 158, 11, 0.95);
+  color: #000;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.toast-critical {
+  background: rgba(239, 68, 68, 0.95);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
 

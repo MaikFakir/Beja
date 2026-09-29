@@ -296,7 +296,8 @@
 
       if (window.firebaseSync && window.firebaseSync.db) {
         try {
-          window.firebaseSync.db.collection('chat_messages').doc(msgObj.id).set(msgObj, { merge: true }).catch(() => {});
+          window.firebaseSync.db.collection('chat_messages').doc(msgObj.id).set(msgObj, { merge: true })
+            .catch((err) => console.error('No se pudo sincronizar el mensaje de chat a Firestore (¿reglas publicadas?):', err));
         } catch (e) {}
       }
 

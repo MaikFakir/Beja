@@ -13,8 +13,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
 
   <!-- Admin & Design Styles -->
-  <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="css/admin.css">
+  <link rel="stylesheet" href="css/styles.css?v=20260917d">
+  <link rel="stylesheet" href="css/admin.css?v=20260917d">
 </head>
 <body class="admin-body">
 
@@ -155,6 +155,7 @@
         <div class="users-header-info">
           <h3>👥 DIRECTORIO CIUDADANO & GESTIÓN DE CUENTAS</h3>
           <p>Control de correos de Google registrados, verificación de identidad y reputación comunitaria.</p>
+          <p class="users-online-readout">🟢 <strong id="user-count-online">0</strong> conectados ahora mismo</p>
         </div>
         <div class="users-search-box">
           <input type="text" id="admin-users-search" class="tactical-input" placeholder="🔍 Buscar por correo o nombre...">
@@ -200,6 +201,7 @@
         <div class="chat-sidebar-header">
           <h4>📻 ESTACIÓN DE COMUNICACIONES TÁCTICAS</h4>
           <p>Red de coordinación enjambre para cuadrantes, patrullas y ciudadanos.</p>
+          <button type="button" class="tactical-btn admin-chat-sidebar-back" id="btn-close-chat-sidebar" aria-label="Volver al chat">← Volver al Chat</button>
         </div>
 
         <div class="admin-chat-channels-list">
@@ -249,6 +251,7 @@
       <!-- Right: Main Chat Feed & Command Composer -->
       <section class="admin-chat-main">
         <div class="admin-chat-top-header">
+          <button type="button" class="tactical-btn admin-chat-sidebar-toggle" id="btn-toggle-chat-sidebar" aria-label="Ver canales y directorio de contactos">👥 Contactos</button>
           <div class="active-chat-info">
             <span class="active-chat-icon" id="admin-chat-active-icon">💬</span>
             <div>
@@ -500,15 +503,18 @@
     </div>
   </div>
 
+  <!-- Toast Notification Container -->
+  <div id="toast-container" aria-live="polite"></div>
+
   <!-- Google Firebase SDK (Plan Spark 100% Free) -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-  <script src="js/firebase-config.js"></script>
-  <script src="js/firebaseAuth.js"></script>
-  <script src="js/chatService.js"></script>
+  <script src="js/firebase-config.js?v=20260929a"></script>
+  <script src="js/firebaseAuth.js?v=20260929a"></script>
+  <script src="js/chatService.js?v=20260929a"></script>
 
   <!-- Universal Admin Bundle Script -->
-  <script src="js/admin-bundle.js"></script>
+  <script src="js/admin-bundle.js?v=20260929a"></script>
 </body>
 </html>
