@@ -5439,6 +5439,22 @@ html, body.citizen-body {
   margin-top: -1px;
 }
 
+.hive-cell-count-pill {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  background: #ff1744;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 800;
+  border-radius: 8px;
+  padding: 1px 4px;
+  line-height: 1.1;
+  border: 1px solid #ffffff;
+  box-shadow: 0 0 6px rgba(255, 23, 68, 0.8);
+  z-index: 5;
+}
+
 /* Honeycomb Care Zone Popup Card */
 .hive-popup-card {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;

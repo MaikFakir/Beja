@@ -785,58 +785,53 @@
       this.renderHeatmap();
     }
 
-    createHexagonPoints(centerLat, centerLng, radiusMeters) {
-      const points = [];
-      for (let i = 0; i < 6; i++) {
-        const angleRad = (Math.PI / 180) * (30 + i * 60);
-        const pLat = centerLat + (radiusMeters * Math.sin(angleRad)) / 111320;
-        const pLng = centerLng + (radiusMeters * Math.cos(angleRad)) / (111320 * Math.cos((centerLat * Math.PI) / 180));
-        points.push([pLat, pLng]);
+    getHexCellKey(lat, lng, radiusMeters = 290) {
+      const LAT0 = 4.6350;
+      const LNG0 = -74.1100;
+      const x = (lng - LNG0) * 110955;
+      const y = (lat - LAT0) * 111320;
+      const qFrac = ((Math.sqrt(3) / 3) * x - (1 / 3) * y) / radiusMeters;
+      const rFrac = ((2 / 3) * y) / radiusMeters;
+
+      let cx = qFrac;
+      let cz = rFrac;
+      let cy = -cx - cz;
+      let rx = Math.round(cx);
+      let ry = Math.round(cy);
+      let rz = Math.round(cz);
+      const xDiff = Math.abs(rx - cx);
+      const yDiff = Math.abs(ry - cy);
+      const zDiff = Math.abs(rz - cz);
+      if (xDiff > yDiff && xDiff > zDiff) {
+        rx = -ry - rz;
+      } else if (yDiff > zDiff) {
+        ry = -rx - rz;
+      } else {
+        rz = -rx - ry;
       }
-      return points;
+      return `${rx},${rz}`;
     }
 
-    getFrequencyScale(pt) {
-      const freqRaw = (pt.frequency || '').toLowerCase();
-      const weight = typeof pt.weight === 'number' ? pt.weight : 0.6;
-      let pct = 70;
-      let label = pt.frequency || 'Alta';
-      let tagClass = 'tag-warn';
-      let fillClass = 'fill-warn';
-      let color = '#fbbf24';
-      let estEvents = '12 - 20 incidentes / mes';
+    getHexCellGeometry(cellKey, radiusMeters = 290) {
+      const LAT0 = 4.6350;
+      const LNG0 = -74.1100;
+      const parts = cellKey.split(',');
+      const q = parseInt(parts[0], 10);
+      const r = parseInt(parts[1], 10);
 
-      if (freqRaw.includes('crític') || freqRaw.includes('critic') || freqRaw.includes('máxim') || freqRaw.includes('maxim') || weight >= 0.90) {
-        pct = Math.min(100, Math.round((weight >= 0.9 ? weight : 0.95) * 100));
-        label = pt.frequency || 'Crítica (Alerta Máxima)';
-        tagClass = 'tag-crit';
-        fillClass = 'fill-crit';
-        color = '#ff1744';
-        estEvents = '25+ incidentes / mes';
-      } else if (freqRaw.includes('muy alta') || weight >= 0.84) {
-        pct = Math.min(92, Math.round((weight >= 0.84 ? weight : 0.88) * 100));
-        label = pt.frequency || 'Muy Alta';
-        tagClass = 'tag-crit';
-        fillClass = 'fill-crit';
-        color = '#f87171';
-        estEvents = '18 - 25 incidentes / mes';
-      } else if (freqRaw.includes('alta') || weight >= 0.74) {
-        pct = Math.min(82, Math.round((weight >= 0.74 ? weight : 0.78) * 100));
-        label = pt.frequency || 'Alta';
-        tagClass = 'tag-warn';
-        fillClass = 'fill-warn';
-        color = '#fbbf24';
-        estEvents = '10 - 18 incidentes / mes';
-      } else {
-        pct = Math.max(35, Math.round(weight * 100));
-        label = pt.frequency || 'Moderada / Ocasional';
-        tagClass = 'tag-acci';
-        fillClass = 'fill-warn';
-        color = '#38bdf8';
-        estEvents = '4 - 10 incidentes / mes';
+      const xc = radiusMeters * (Math.sqrt(3) * q + (Math.sqrt(3) / 2) * r);
+      const yc = radiusMeters * (1.5 * r);
+      const centerLat = LAT0 + yc / 111320;
+      const centerLng = LNG0 + xc / 110955;
+
+      const vertices = [];
+      for (let i = 0; i < 6; i++) {
+        const angleRad = (Math.PI / 180) * (30 + i * 60);
+        const vLat = centerLat + (radiusMeters * Math.sin(angleRad)) / 111320;
+        const vLng = centerLng + (radiusMeters * Math.cos(angleRad)) / 110955;
+        vertices.push([vLat, vLng]);
       }
-
-      return { pct, label, tagClass, fillClass, color, estEvents };
+      return { center: [centerLat, centerLng], vertices };
     }
 
     renderHeatmap() {
@@ -858,21 +853,17 @@
       const history = swarmEngine.loadHistory();
       const active = swarmEngine.loadIncidents();
       const points = [];
+      const CELL_RADIUS = 290;
+      const hexCells = new Map();
 
+      // 1. Procesar puntos históricos
       history.forEach(pt => {
         const matchesCategory = (this.categoryFilter === 'ALL' || pt.category === this.categoryFilter);
         const matchesTime = (this.timeFilter === 'ALL' || pt.timeOfDay === this.timeFilter || pt.timeOfDay === 'BOTH');
         if (matchesCategory && matchesTime) {
-          // El mapa de calor SIEMPRE recibe el punto con su peso térmico calibrado:
-          // Puntos pasados u ocasionales quedan con intensidades moderadas (verde persistente).
-          // Puntos críticos y de alta frecuencia escalan gradualmente a rojo.
           const heatWeight = typeof pt.weight === 'number' ? pt.weight : 0.65;
           points.push([pt.lat, pt.lng, heatWeight]);
 
-          // FILTRO ESTRICTO DE USUARIO:
-          // Solo los puntos con FRECUENCIA ALTA se demarcan como "Zona de Cuidado / Panal Hexagonal".
-          // Para los que pasaron en algún momento (frecuencia moderada o eventos pasados),
-          // NO se dibuja polígono ni marcador; queda EXCLUSIVAMENTE la zona de calor activa en verde/amarillo.
           const freqRaw = (pt.frequency || '').toLowerCase();
           const isHighFreq = (pt.weight >= 0.78) || (
             freqRaw.includes('alta') ||
@@ -883,96 +874,169 @@
           );
 
           if (isHighFreq) {
-            const freqScale = this.getFrequencyScale(pt);
-            const isAccident = pt.category === 'ACCIDENT';
-            const isCrit = (pt.weight || 0.6) >= 0.88 || freqRaw.includes('crític') || freqRaw.includes('critic');
-
-            const strokeColor = isAccident ? '#00d2ff' : (isCrit ? '#ff1744' : '#f59e0b');
-            const pinClass = isAccident ? 'hex-acci' : (isCrit ? 'hex-crit' : 'hex-warn');
-            const catIcon = isAccident ? '💥' : (pt.category === 'ROBBERY' ? '🚨' : '🛡️');
-            const catName = isAccident ? 'Siniestro Vial' : (pt.category === 'ROBBERY' ? 'Hurto / Asalto' : 'Inseguridad / Riña');
-            const timeLabel = pt.timeOfDay === 'DAY' ? '☀️ DÍA (06:00 - 18:00)' : (pt.timeOfDay === 'NIGHT' ? '🌙 NOCHE (18:00 - 05:00)' : '🕒 24 HORAS');
-
-            // 1. Polígono Regular Hexagonal (Panal de Cuidado de 6 lados)
-            const radiusMeters = isCrit ? 290 : 230;
-            const hexCoords = this.createHexagonPoints(pt.lat, pt.lng, radiusMeters);
-
-            const hexPolygon = L.polygon(hexCoords, {
-              color: strokeColor,
-              weight: 2,
-              dashArray: '5, 5',
-              fillColor: strokeColor,
-              fillOpacity: 0.16,
-              className: 'hive-care-zone-polygon'
-            });
-
-            // 2. Pin Central Táctico en forma de Panal
-            const pinIcon = L.divIcon({
-              className: 'hive-badge-icon',
-              html: `
-                <div class="hive-hex-pin ${pinClass}" title="${pt.name || 'Panal de Cuidado'}">
-                  <span class="hex-symbol">⬢</span>
-                  <span class="hex-cat-icon">${catIcon}</span>
-                </div>
-              `,
-              iconSize: [28, 28],
-              iconAnchor: [14, 14],
-              popupAnchor: [0, -14]
-            });
-            const centerMarker = L.marker([pt.lat, pt.lng], { icon: pinIcon });
-
-            // 3. Popup Táctico con Escala de Frecuencia de Eventos
-            const popupHtml = `
-              <div class="hive-popup-card">
-                <div class="hive-popup-top">
-                  <span class="hive-tag ${freqScale.tagClass}">
-                    ⬢ ZONA DE CUIDADO • ${catName}
-                  </span>
-                  <span class="hive-time-tag">${timeLabel}</span>
-                </div>
-                <div class="hive-popup-title">${pt.name || 'Zona de Cuidado Georreferenciada'}</div>
-                <p class="hive-popup-desc">${pt.description || 'Punto caliente de alta recurrencia reportado en Bogotá.'}</p>
-
-                <!-- ESCALA DE FRECUENCIA DE EVENTOS -->
-                <div class="hive-freq-meter">
-                  <div class="freq-label-row">
-                    <span>Escala de Frecuencia de Eventos:</span>
-                    <strong style="color:${freqScale.color};">${freqScale.label} (${freqScale.pct}%)</strong>
-                  </div>
-                  <div class="freq-meter-bar">
-                    <div class="freq-meter-fill ${freqScale.fillClass}" style="width:${freqScale.pct}%;"></div>
-                  </div>
-                </div>
-
-                <div class="hive-meta-grid">
-                  <div><span>Franja Horaria:</span><strong>${pt.hour || 'Todo el día'}</strong></div>
-                  <div><span>Recurrencia:</span><strong>${freqScale.estEvents}</strong></div>
-                  <div style="grid-column:span 2;"><span>Localidad:</span><strong>${pt.locality || 'Bogotá D.C.'}</strong></div>
-                </div>
-              </div>
-            `;
-
-            hexPolygon.bindPopup(popupHtml);
-            centerMarker.bindPopup(popupHtml);
-
-            hexPolygon.addTo(this.hotspotMarkersLayer);
-            centerMarker.addTo(this.hotspotMarkersLayer);
+            const cellKey = this.getHexCellKey(pt.lat, pt.lng, CELL_RADIUS);
+            if (!hexCells.has(cellKey)) {
+              hexCells.set(cellKey, {
+                cellKey,
+                items: [],
+                maxWeight: 0,
+                hasAccident: false,
+                hasCritical: false,
+                locality: pt.locality || 'Bogotá D.C.'
+              });
+            }
+            const cell = hexCells.get(cellKey);
+            cell.items.push(pt);
+            if ((pt.weight || 0.6) > cell.maxWeight) cell.maxWeight = pt.weight || 0.6;
+            if (pt.category === 'ACCIDENT') cell.hasAccident = true;
+            if ((pt.weight || 0.6) >= 0.88 || freqRaw.includes('crític') || freqRaw.includes('critic') || freqRaw.includes('máxim') || freqRaw.includes('maxim')) {
+              cell.hasCritical = true;
+            }
           }
         }
       });
 
+      // 2. Procesar incidentes activos en tiempo real
       active.forEach(inc => {
         const matchesCategory = (this.categoryFilter === 'ALL' || inc.category === this.categoryFilter);
         if (matchesCategory) {
           const isCrit = inc.status === INCIDENT_STATES.CRITICAL_SWARM;
           const weight = isCrit ? 1.0 : 0.75;
           points.push([inc.lat, inc.lng, weight]);
+
+          if (isCrit || (inc.reportCount && inc.reportCount >= 2)) {
+            const cellKey = this.getHexCellKey(inc.lat, inc.lng, CELL_RADIUS);
+            if (!hexCells.has(cellKey)) {
+              hexCells.set(cellKey, {
+                cellKey,
+                items: [],
+                maxWeight: weight,
+                hasAccident: inc.category === 'ACCIDENT',
+                hasCritical: true,
+                locality: 'Cuadrante Activo C2'
+              });
+            }
+            const cell = hexCells.get(cellKey);
+            cell.items.push({
+              id: inc.id,
+              name: inc.title || inc.description || 'Alerta Activa de Enjambre',
+              category: inc.category || 'ROBBERY',
+              weight: weight,
+              frequency: 'Alerta Activa C2',
+              hour: 'En curso',
+              description: inc.description || 'Alerta verificada en tiempo real.'
+            });
+            cell.hasCritical = true;
+            cell.maxWeight = 1.0;
+          }
         }
       });
 
-      // Espectro Térmico Continuo:
-      // Nunca desaparece. Los eventos pasados se proyectan en verde esmeralda y verde medio,
-      // mientras las áreas de alta recurrencia o incidentes activos suben a amarillo, naranja y rojo carmesí.
+      // 3. Renderizar Panales Hexagonales Conectados
+      hexCells.forEach(cell => {
+        const alertCount = cell.items.length;
+        const geom = this.getHexCellGeometry(cell.cellKey, CELL_RADIUS);
+
+        // Regla: Si hay varias alertas en un mismo panel, es más peligroso
+        const isMultiple = alertCount >= 2;
+        const cumulativeWeight = Math.min(1.0, cell.maxWeight + (isMultiple ? 0.12 * (alertCount - 1) : 0));
+        const isCrit = cell.hasCritical || isMultiple || cumulativeWeight >= 0.86;
+        const isAccident = cell.hasAccident && !cell.hasCritical && !isMultiple;
+
+        const strokeColor = isAccident ? '#00d2ff' : (isCrit ? '#ff1744' : '#f59e0b');
+        const pinClass = isAccident ? 'hex-acci' : (isCrit ? 'hex-crit' : 'hex-warn');
+        const catIcon = isMultiple ? '🚨' : (isAccident ? '💥' : (cell.items[0]?.category === 'ROBBERY' ? '🚨' : '🛡️'));
+        const catName = isMultiple 
+          ? `Alta Concentración (${alertCount} Focos)` 
+          : (isAccident ? 'Siniestro Vial' : (cell.items[0]?.category === 'ROBBERY' ? 'Hurto / Asalto' : 'Inseguridad / Riña'));
+
+        // Mayor transparencia solicitada por el usuario (fillOpacity: 0.08 a 0.11)
+        const fillOpacity = isCrit ? 0.11 : 0.08;
+
+        const hexPolygon = L.polygon(geom.vertices, {
+          color: strokeColor,
+          weight: isCrit ? 1.8 : 1.4,
+          dashArray: '4, 4',
+          fillColor: strokeColor,
+          fillOpacity: fillOpacity,
+          className: 'hive-care-zone-polygon'
+        });
+
+        // Pin central único por celda con contador numérico si hay múltiples alertas
+        const pinIcon = L.divIcon({
+          className: 'hive-badge-icon',
+          html: `
+            <div class="hive-hex-pin ${pinClass}" title="Panal de Cuidado C2: ${alertCount} Focos">
+              <span class="hex-symbol">⬢</span>
+              <span class="hex-cat-icon">${catIcon}</span>
+              ${isMultiple ? `<span class="hive-cell-count-pill">${alertCount}</span>` : ''}
+            </div>
+          `,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+          popupAnchor: [0, -14]
+        });
+        const centerMarker = L.marker(geom.center, { icon: pinIcon });
+
+        const freqPct = Math.min(100, Math.round((isCrit ? Math.max(0.92, cumulativeWeight) : cumulativeWeight) * 100));
+        const freqLabel = isCrit 
+          ? `Crítica • Alta Concentración (${alertCount} Focos)` 
+          : (cumulativeWeight >= 0.8 ? 'Alta Recurrencia' : 'Moderada - Alta');
+
+        const itemsListHtml = cell.items.map(it => `
+          <div style="background:rgba(255,255,255,0.06); padding:4px 6px; border-radius:5px; border-left:2px solid ${it.category === 'ACCIDENT' ? '#00d2ff' : ((it.weight||0.6)>=0.85 ? '#ff1744' : '#f59e0b')}; font-size:10px; margin-bottom:3px;">
+            <strong style="color:#ffffff; display:block;">${it.category === 'ACCIDENT' ? '💥' : (it.category === 'ROBBERY' ? '🚨' : '🛡️')} ${it.name}</strong>
+            <span style="color:#94a3b8; font-size:9px;">${it.hour || 'Horario continuo'} • Frecuencia: <span style="color:#fbbf24;">${it.frequency || 'Recurrente'}</span></span>
+          </div>
+        `).join('');
+
+        const popupHtml = `
+          <div class="hive-popup-card">
+            <div class="hive-popup-top">
+              <span class="hive-tag ${isCrit ? 'tag-crit' : (isAccident ? 'tag-acci' : 'tag-warn')}">
+                ⬢ PANAL DE CUIDADO • ${catName}
+              </span>
+              <span class="hive-time-tag">${alertCount} ${alertCount === 1 ? 'Punto' : 'Puntos agrupados'}</span>
+            </div>
+            <div class="hive-popup-title">${isMultiple ? `Sector de Alta Concentración • ${cell.locality}` : (cell.items[0]?.name || 'Zona de Cuidado')}</div>
+            <p class="hive-popup-desc" style="margin:0 0 6px 0; font-size:11px; color:#cbd5e1;">
+              ${isMultiple 
+                ? `Este panal táctico C2 agrupa ${alertCount} focos de riesgo cercanos interconectados. Prioridad de despacho.` 
+                : (cell.items[0]?.description || 'Zona georreferenciada de atención comunitaria.')}
+            </p>
+
+            <!-- ESCALA DE FRECUENCIA DE EVENTOS -->
+            <div class="hive-freq-meter" style="margin-bottom:8px;">
+              <div class="freq-label-row">
+                <span>Escala de Frecuencia / Riesgo:</span>
+                <strong style="color:${isCrit ? '#ff1744' : (isAccident ? '#00d2ff' : '#fbbf24')};">${freqLabel} (${freqPct}%)</strong>
+              </div>
+              <div class="freq-meter-bar">
+                <div class="freq-meter-fill ${isCrit ? 'fill-crit' : 'fill-warn'}" style="width:${freqPct}%;"></div>
+              </div>
+            </div>
+
+            <!-- LISTA DE FOCOS DEL PANAL -->
+            <div style="max-height:120px; overflow-y:auto; margin-bottom:8px; padding-right:2px;">
+              ${itemsListHtml}
+            </div>
+
+            <div class="hive-meta-grid">
+              <div><span>Alertas en Celda:</span><strong>${alertCount} registradas</strong></div>
+              <div><span>Nivel de Riesgo:</span><strong style="color:${isCrit ? '#ff4d6d' : '#fbbf24'};">${isCrit ? 'CRÍTICO' : 'PREVENTIVO'}</strong></div>
+              <div style="grid-column:span 2;"><span>Localidad:</span><strong>${cell.locality}</strong></div>
+            </div>
+          </div>
+        `;
+
+        hexPolygon.bindPopup(popupHtml);
+        centerMarker.bindPopup(popupHtml);
+
+        hexPolygon.addTo(this.hotspotMarkersLayer);
+        centerMarker.addTo(this.hotspotMarkersLayer);
+      });
+
+      // Espectro Térmico Continuo
       if (points.length > 0) {
         this.heatLayer = L.heatLayer(points, {
           radius: 34,

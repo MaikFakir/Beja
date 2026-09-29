@@ -142,15 +142,57 @@ export class RiskMap {
   /**
    * Render dynamic heatmap layer (Leaflet.heat)
    */
-  createHexagonPoints(centerLat, centerLng, radiusMeters) {
-    const points = [];
+  /**
+   * Proyección y Teselación Matemática de Cuadrícula Hexagonal (Honeycomb Grid)
+   * Garantiza que todas las celdas compartan aristas exactas sin superponerse jamás.
+   */
+  getHexCellKey(lat, lng, radiusMeters = 290) {
+    const LAT0 = 4.6350;
+    const LNG0 = -74.1100;
+    const x = (lng - LNG0) * 110955;
+    const y = (lat - LAT0) * 111320;
+    const qFrac = ((Math.sqrt(3) / 3) * x - (1 / 3) * y) / radiusMeters;
+    const rFrac = ((2 / 3) * y) / radiusMeters;
+
+    let cx = qFrac;
+    let cz = rFrac;
+    let cy = -cx - cz;
+    let rx = Math.round(cx);
+    let ry = Math.round(cy);
+    let rz = Math.round(cz);
+    const xDiff = Math.abs(rx - cx);
+    const yDiff = Math.abs(ry - cy);
+    const zDiff = Math.abs(rz - cz);
+    if (xDiff > yDiff && xDiff > zDiff) {
+      rx = -ry - rz;
+    } else if (yDiff > zDiff) {
+      ry = -rx - rz;
+    } else {
+      rz = -rx - ry;
+    }
+    return `${rx},${rz}`;
+  }
+
+  getHexCellGeometry(cellKey, radiusMeters = 290) {
+    const LAT0 = 4.6350;
+    const LNG0 = -74.1100;
+    const parts = cellKey.split(',');
+    const q = parseInt(parts[0], 10);
+    const r = parseInt(parts[1], 10);
+
+    const xc = radiusMeters * (Math.sqrt(3) * q + (Math.sqrt(3) / 2) * r);
+    const yc = radiusMeters * (1.5 * r);
+    const centerLat = LAT0 + yc / 111320;
+    const centerLng = LNG0 + xc / 110955;
+
+    const vertices = [];
     for (let i = 0; i < 6; i++) {
       const angleRad = (Math.PI / 180) * (30 + i * 60);
-      const pLat = centerLat + (radiusMeters * Math.sin(angleRad)) / 111320;
-      const pLng = centerLng + (radiusMeters * Math.cos(angleRad)) / (111320 * Math.cos((centerLat * Math.PI) / 180));
-      points.push([pLat, pLng]);
+      const vLat = centerLat + (radiusMeters * Math.sin(angleRad)) / 111320;
+      const vLng = centerLng + (radiusMeters * Math.cos(angleRad)) / 110955;
+      vertices.push([vLat, vLng]);
     }
-    return points;
+    return { center: [centerLat, centerLng], vertices };
   }
 
   getFrequencyScale(pt) {
@@ -197,7 +239,7 @@ export class RiskMap {
   }
 
   /**
-   * Render dynamic heatmap layer (Leaflet.heat) and Hexagonal Care Zones
+   * Render dynamic heatmap layer (Leaflet.heat) and Connected Hexagonal Care Cells (Honeycombs)
    */
   renderHeatmap() {
     if (!this.map || !window.L || !window.L.heatLayer) return;
@@ -215,7 +257,10 @@ export class RiskMap {
     const rawHistory = swarmEngine.loadHistory();
     const activeIncidents = swarmEngine.loadIncidents();
     const points = [];
+    const CELL_RADIUS = 290;
+    const hexCells = new Map();
 
+    // 1. Procesar puntos históricos
     rawHistory.forEach(pt => {
       if (this.timeFilter === 'ALL' || pt.timeOfDay === this.timeFilter || pt.timeOfDay === 'BOTH') {
         const heatWeight = typeof pt.weight === 'number' ? pt.weight : 0.65;
@@ -231,84 +276,163 @@ export class RiskMap {
         );
 
         if (isHighFreq) {
-          const freqScale = this.getFrequencyScale(pt);
-          const isAccident = pt.category === 'ACCIDENT';
-          const isCrit = (pt.weight || 0.6) >= 0.88 || freqRaw.includes('crític') || freqRaw.includes('critic');
-
-          const strokeColor = isAccident ? '#00d2ff' : (isCrit ? '#ff1744' : '#f59e0b');
-          const pinClass = isAccident ? 'hex-acci' : (isCrit ? 'hex-crit' : 'hex-warn');
-          const catIcon = isAccident ? '💥' : (pt.category === 'ROBBERY' ? '🚨' : '🛡️');
-          const catName = isAccident ? 'Siniestro Vial' : (pt.category === 'ROBBERY' ? 'Hurto / Asalto' : 'Inseguridad / Riña');
-          const timeLabel = pt.timeOfDay === 'DAY' ? '☀️ DÍA (06:00 - 18:00)' : (pt.timeOfDay === 'NIGHT' ? '🌙 NOCHE (18:00 - 05:00)' : '🕒 24 HORAS');
-
-          const radiusMeters = isCrit ? 290 : 230;
-          const hexCoords = this.createHexagonPoints(pt.lat, pt.lng, radiusMeters);
-
-          const hexPolygon = L.polygon(hexCoords, {
-            color: strokeColor,
-            weight: 2,
-            dashArray: '5, 5',
-            fillColor: strokeColor,
-            fillOpacity: 0.16,
-            className: 'hive-care-zone-polygon'
-          });
-
-          const pinIcon = L.divIcon({
-            className: 'hive-badge-icon',
-            html: `
-              <div class="hive-hex-pin ${pinClass}" title="${pt.name || 'Panal de Cuidado'}">
-                <span class="hex-symbol">⬢</span>
-                <span class="hex-cat-icon">${catIcon}</span>
-              </div>
-            `,
-            iconSize: [28, 28],
-            iconAnchor: [14, 14],
-            popupAnchor: [0, -14]
-          });
-          const centerMarker = L.marker([pt.lat, pt.lng], { icon: pinIcon });
-
-          const popupHtml = `
-            <div class="hive-popup-card">
-              <div class="hive-popup-top">
-                <span class="hive-tag ${freqScale.tagClass}">
-                  ⬢ ZONA DE CUIDADO • ${catName}
-                </span>
-                <span class="hive-time-tag">${timeLabel}</span>
-              </div>
-              <div class="hive-popup-title">${pt.name || 'Zona de Cuidado Georreferenciada'}</div>
-              <p class="hive-popup-desc">${pt.description || 'Punto caliente de alta recurrencia reportado en Bogotá.'}</p>
-
-              <div class="hive-freq-meter">
-                <div class="freq-label-row">
-                  <span>Escala de Frecuencia de Eventos:</span>
-                  <strong style="color:${freqScale.color};">${freqScale.label} (${freqScale.pct}%)</strong>
-                </div>
-                <div class="freq-meter-bar">
-                  <div class="freq-meter-fill ${freqScale.fillClass}" style="width:${freqScale.pct}%;"></div>
-                </div>
-              </div>
-
-              <div class="hive-meta-grid">
-                <div><span>Franja Horaria:</span><strong>${pt.hour || 'Todo el día'}</strong></div>
-                <div><span>Recurrencia:</span><strong>${freqScale.estEvents}</strong></div>
-                <div style="grid-column:span 2;"><span>Localidad:</span><strong>${pt.locality || 'Bogotá D.C.'}</strong></div>
-              </div>
-            </div>
-          `;
-
-          hexPolygon.bindPopup(popupHtml);
-          centerMarker.bindPopup(popupHtml);
-
-          hexPolygon.addTo(this.hotspotMarkersLayer);
-          centerMarker.addTo(this.hotspotMarkersLayer);
+          const cellKey = this.getHexCellKey(pt.lat, pt.lng, CELL_RADIUS);
+          if (!hexCells.has(cellKey)) {
+            hexCells.set(cellKey, {
+              cellKey,
+              items: [],
+              maxWeight: 0,
+              hasAccident: false,
+              hasCritical: false,
+              locality: pt.locality || 'Bogotá D.C.'
+            });
+          }
+          const cell = hexCells.get(cellKey);
+          cell.items.push(pt);
+          if ((pt.weight || 0.6) > cell.maxWeight) cell.maxWeight = pt.weight || 0.6;
+          if (pt.category === 'ACCIDENT') cell.hasAccident = true;
+          if ((pt.weight || 0.6) >= 0.88 || freqRaw.includes('crític') || freqRaw.includes('critic') || freqRaw.includes('máxim') || freqRaw.includes('maxim')) {
+            cell.hasCritical = true;
+          }
         }
       }
     });
 
+    // 2. Procesar incidentes activos en tiempo real
     activeIncidents.forEach(inc => {
       const isCrit = inc.status === INCIDENT_STATES.CRITICAL_SWARM;
       const mainWeight = isCrit ? 1.0 : (inc.reportCount >= 1 ? 0.82 : 0.65);
       points.push([inc.lat, inc.lng, mainWeight]);
+
+      if (isCrit || (inc.reportCount && inc.reportCount >= 2)) {
+        const cellKey = this.getHexCellKey(inc.lat, inc.lng, CELL_RADIUS);
+        if (!hexCells.has(cellKey)) {
+          hexCells.set(cellKey, {
+            cellKey,
+            items: [],
+            maxWeight: mainWeight,
+            hasAccident: inc.category === 'ACCIDENT',
+            hasCritical: true,
+            locality: 'Cuadrante Activo'
+          });
+        }
+        const cell = hexCells.get(cellKey);
+        cell.items.push({
+          id: inc.id,
+          name: inc.title || inc.description || 'Alerta Activa de Enjambre',
+          category: inc.category || 'ROBBERY',
+          weight: mainWeight,
+          frequency: 'Alerta Activa en Vivo',
+          hour: 'En curso',
+          description: inc.description || 'Alerta comunitaria verificada en tiempo real.'
+        });
+        cell.hasCritical = true;
+        cell.maxWeight = 1.0;
+      }
+    });
+
+    // 3. Renderizar Panales Hexagonales Conectados (Sin superposición, transparentes y acumulativos)
+    hexCells.forEach(cell => {
+      const alertCount = cell.items.length;
+      const geom = this.getHexCellGeometry(cell.cellKey, CELL_RADIUS);
+
+      // Regla: Si hay varias alertas en un mismo panel, es más peligroso
+      const isMultiple = alertCount >= 2;
+      const cumulativeWeight = Math.min(1.0, cell.maxWeight + (isMultiple ? 0.12 * (alertCount - 1) : 0));
+      const isCrit = cell.hasCritical || isMultiple || cumulativeWeight >= 0.86;
+      const isAccident = cell.hasAccident && !cell.hasCritical && !isMultiple;
+
+      const strokeColor = isAccident ? '#00d2ff' : (isCrit ? '#ff1744' : '#f59e0b');
+      const pinClass = isAccident ? 'hex-acci' : (isCrit ? 'hex-crit' : 'hex-warn');
+      const catIcon = isMultiple ? '🚨' : (isAccident ? '💥' : (cell.items[0]?.category === 'ROBBERY' ? '🚨' : '🛡️'));
+      const catName = isMultiple 
+        ? `Alta Concentración (${alertCount} Focos)` 
+        : (isAccident ? 'Siniestro Vial' : (cell.items[0]?.category === 'ROBBERY' ? 'Hurto / Asalto' : 'Inseguridad / Riña'));
+
+      // Mayor transparencia solicitada por el usuario (fillOpacity: 0.08 a 0.11)
+      const fillOpacity = isCrit ? 0.11 : 0.08;
+
+      const hexPolygon = L.polygon(geom.vertices, {
+        color: strokeColor,
+        weight: isCrit ? 1.8 : 1.4,
+        dashArray: '4, 4',
+        fillColor: strokeColor,
+        fillOpacity: fillOpacity,
+        className: 'hive-care-zone-polygon'
+      });
+
+      // Pin central único por celda con contador numérico si hay múltiples alertas
+      const pinIcon = L.divIcon({
+        className: 'hive-badge-icon',
+        html: `
+          <div class="hive-hex-pin ${pinClass}" title="Panal de Cuidado: ${alertCount} Focos">
+            <span class="hex-symbol">⬢</span>
+            <span class="hex-cat-icon">${catIcon}</span>
+            ${isMultiple ? `<span class="hive-cell-count-pill">${alertCount}</span>` : ''}
+          </div>
+        `,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+        popupAnchor: [0, -14]
+      });
+      const centerMarker = L.marker(geom.center, { icon: pinIcon });
+
+      const freqPct = Math.min(100, Math.round((isCrit ? Math.max(0.92, cumulativeWeight) : cumulativeWeight) * 100));
+      const freqLabel = isCrit 
+        ? `Crítica • Alta Concentración (${alertCount} Focos)` 
+        : (cumulativeWeight >= 0.8 ? 'Alta Recurrencia' : 'Moderada - Alta');
+
+      const itemsListHtml = cell.items.map(it => `
+        <div style="background:rgba(255,255,255,0.06); padding:4px 6px; border-radius:5px; border-left:2px solid ${it.category === 'ACCIDENT' ? '#00d2ff' : ((it.weight||0.6)>=0.85 ? '#ff1744' : '#f59e0b')}; font-size:10px; margin-bottom:3px;">
+          <strong style="color:#ffffff; display:block;">${it.category === 'ACCIDENT' ? '💥' : (it.category === 'ROBBERY' ? '🚨' : '🛡️')} ${it.name}</strong>
+          <span style="color:#94a3b8; font-size:9px;">${it.hour || 'Horario continuo'} • Frecuencia: <span style="color:#fbbf24;">${it.frequency || 'Recurrente'}</span></span>
+        </div>
+      `).join('');
+
+      const popupHtml = `
+        <div class="hive-popup-card">
+          <div class="hive-popup-top">
+            <span class="hive-tag ${isCrit ? 'tag-crit' : (isAccident ? 'tag-acci' : 'tag-warn')}">
+              ⬢ PANAL DE CUIDADO • ${catName}
+            </span>
+            <span class="hive-time-tag">${alertCount} ${alertCount === 1 ? 'Punto' : 'Puntos agrupados'}</span>
+          </div>
+          <div class="hive-popup-title">${isMultiple ? `Sector de Alta Concentración • ${cell.locality}` : (cell.items[0]?.name || 'Zona de Cuidado')}</div>
+          <p class="hive-popup-desc" style="margin:0 0 6px 0; font-size:11px; color:#cbd5e1;">
+            ${isMultiple 
+              ? `Este panal agrupa ${alertCount} focos de riesgo cercanos interconectados. Máxima precaución en este cuadrante.` 
+              : (cell.items[0]?.description || 'Zona georreferenciada de atención comunitaria.')}
+          </p>
+
+          <!-- ESCALA DE FRECUENCIA DE EVENTOS -->
+          <div class="hive-freq-meter" style="margin-bottom:8px;">
+            <div class="freq-label-row">
+              <span>Escala de Frecuencia / Riesgo:</span>
+              <strong style="color:${isCrit ? '#ff1744' : (isAccident ? '#00d2ff' : '#fbbf24')};">${freqLabel} (${freqPct}%)</strong>
+            </div>
+            <div class="freq-meter-bar">
+              <div class="freq-meter-fill ${isCrit ? 'fill-crit' : 'fill-warn'}" style="width:${freqPct}%;"></div>
+            </div>
+          </div>
+
+          <!-- LISTA DE FOCOS DEL PANAL -->
+          <div style="max-height:120px; overflow-y:auto; margin-bottom:8px; padding-right:2px;">
+            ${itemsListHtml}
+          </div>
+
+          <div class="hive-meta-grid">
+            <div><span>Alertas en Celda:</span><strong>${alertCount} registradas</strong></div>
+            <div><span>Nivel de Riesgo:</span><strong style="color:${isCrit ? '#ff4d6d' : '#fbbf24'};">${isCrit ? 'CRÍTICO' : 'PREVENTIVO'}</strong></div>
+            <div style="grid-column:span 2;"><span>Localidad:</span><strong>${cell.locality}</strong></div>
+          </div>
+        </div>
+      `;
+
+      hexPolygon.bindPopup(popupHtml);
+      centerMarker.bindPopup(popupHtml);
+
+      hexPolygon.addTo(this.hotspotMarkersLayer);
+      centerMarker.addTo(this.hotspotMarkersLayer);
     });
 
     if (points.length === 0) return;
