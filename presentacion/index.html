@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Beja Colmena Segura</title>
+<meta name="description" content="Beja: red comunitaria de vigilancia preventiva. Presentación Shark Tank 2026.">
+<meta name="theme-color" content="#04060b">
+<link rel="icon" href="assets/img/logo-beja.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;300;400;600&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/css/fonts.css">
+<link rel="stylesheet" href="assets/css/styles.css">
+<script>document.documentElement.classList.add("js")</script>
+</head>
+<body>
+
+<!-- ===== ICONOS (sprite) ===== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M7 3h7l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z M14 3v5h5 M9 13h6 M9 17h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.3 7.5 9.5 4.3-1.2 7.5-4.9 7.5-9.5V6Z M8.5 12l2.5 2.5 4.5-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+  <symbol id="i-hex" viewBox="0 0 24 24"><path d="M12 2.8 20 7.4v9.2l-8 4.6-8-4.6V7.4Z M12 8.2l3.3 1.9v3.8L12 15.8l-3.3-1.9v-3.8Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  <symbol id="i-people" viewBox="0 0 24 24"><path d="M9 11a3.2 3.2 0 1 0 0-6.4A3.2 3.2 0 0 0 9 11Zm-6 9c.4-3.3 2.9-5.5 6-5.5s5.6 2.2 6 5.5M16.5 10.5a2.6 2.6 0 1 0 0-5.2M18 14.8c1.7.6 2.8 2.2 3 4.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5Z M3 13l9 5 9-5 M3 17.5l9 5 9-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z M12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 2.8 20h18.4Z M12 10v4.5 M12 17.2v.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-building" viewBox="0 0 24 24"><path d="M3 21h18 M5 21V9l7-5 7 5v12 M9 21v-5h6v5 M9 11h.01 M12 11h.01 M15 11h.01" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.5 18.5h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><path d="M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm12-10a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM8 17h6.5a3.5 3.5 0 0 0 0-7h-5a3.5 3.5 0 0 1 0-7H16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V4 M4 20h16 M7 15l4-4 3 3 5-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5Z" fill="currentColor"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 8h16M4 16h10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-bee" viewBox="0 0 24 24"><path d="M12 7.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4ZM9.2 8.5h5.6L14 12H10Zm1 4.4h3.6l-.6 2.2h-2.4Zm.8 3.2h2l-1 4.4Z M9.5 9c-3-2.6-6.8-1.7-6.8.3 0 2 3.6 2.8 6.6 1.2M14.5 9c3-2.6 6.8-1.7 6.8.3 0 2-3.6 2.8-6.6 1.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>
+</svg>
+
+<div class="progress" aria-hidden="true"><span id="progressBar"></span></div>
+<div class="cursor-glow" id="cursorGlow" aria-hidden="true"></div>
+
+<!-- ===== NAVEGACIÓN ===== -->
+<header class="nav" id="nav">
+  <a class="nav-brand" href="#inicio" aria-label="Inicio">
+    <img data-src="general.logo" alt="" width="34" height="37">
+    <span class="nav-brand-txt"><b data-t="general.marca"></b><small data-t="general.submarca"></small></span>
+    <span class="chip-tag" data-t="general.etiquetaEvento"></span>
+  </a>
+  <nav class="nav-links" aria-label="Secciones">
+    <a href="#legal">Legal</a><a href="#canvas">Canvas</a><a href="#propuesta">Propuesta</a><a href="#demanda">Demanda</a><a href="#precio">Precio</a><a href="#web">Web</a>
+  </nav>
+  <div class="nav-actions">
+    <button class="btn-icon" id="menuBtn" aria-label="Abrir índice"><svg><use href="#i-menu"/></svg><span>Índice</span></button>
+    <a class="pill pill-honey" data-href="general.enlaceApp" target="_blank" rel="noopener"><span class="dot-live"></span><span data-t="general.textoBotonApp"></span></a>
+  </div>
+</header>
+
+<!-- Índice a pantalla completa -->
+<div class="index-overlay" id="indexOverlay" hidden>
+  <button class="btn-close" data-close-index aria-label="Cerrar índice"><svg><use href="#i-close"/></svg></button>
+  <p class="mono muted">Orden de la presentación</p>
+  <ol class="index-list" id="indexList"></ol>
+</div>
+
+<!-- Puntos laterales -->
+<nav class="side-dots" id="sideDots" aria-label="Progreso"></nav>
+
+<main>
+
+<!-- ================= PORTADA ================= -->
+<section class="hero" id="inicio" data-label="Inicio">
+  <canvas class="hero-net" id="heroNet" aria-hidden="true"></canvas>
+  <div class="hero-glow" aria-hidden="true"></div>
+  <div class="hero-ghost" aria-hidden="true" data-t="hero.tituloFondo"></div>
+
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow"><span class="hex-dot"></span><span data-t="hero.eyebrow"></span></p>
+      <h1 class="display" data-t="hero.titulo"></h1>
+      <p class="lead" data-t="hero.bajada"></p>
+      <div class="hero-cta">
+        <a href="#legal" class="pill pill-glass"><span data-t="hero.botonPrincipal"></span><i class="pill-arrow"><svg><use href="#i-arrow"/></svg></i></a>
+        <a class="link-arrow" data-href="general.enlaceApp" target="_blank" rel="noopener"><i class="play"><svg><use href="#i-play"/></svg></i><span data-t="hero.botonSecundario"></span></a>
+      </div>
+    </div>
+
+    <div class="hero-stage" id="heroStage">
+      <!-- teléfono flotante -->
+      <div class="phone float-a" data-depth="18">
+        <div class="phone-screen">
+          <canvas class="city" data-city="hero" aria-hidden="true"></canvas>
+          <div class="ui-top"><span class="ui-logo"><img data-src="general.logo" alt=""></span><span class="ui-chip ok">● Colmena activa</span></div>
+          <div class="ui-radar"><span></span><span></span><span></span></div>
+          <div class="ui-card">
+            <span class="ui-card-ico"><svg><use href="#i-alert"/></svg></span>
+            <div><b>Actividad sospechosa</b><small>Cra 7 · hace 2 min · 3 confirmaciones</small></div>
+          </div>
+          <div class="ui-bottom"><span class="ui-route"><svg><use href="#i-route"/></svg> Ruta 98% segura</span><span class="ui-sos">SOS</span></div>
+        </div>
+      </div>
+      <!-- paneles hexagonales flotantes -->
+      <div class="hex-tile t1 float-b" data-depth="36"><svg><use href="#i-shield"/></svg></div>
+      <div class="hex-tile t2 float-c" data-depth="-28"><svg><use href="#i-pin"/></svg></div>
+      <div class="hex-tile t3 float-a" data-depth="48"><svg><use href="#i-people"/></svg></div>
+      <div class="hex-tile t4 ghost float-b" data-depth="-14"></div>
+      <div class="hex-tile t5 ghost float-c" data-depth="22"></div>
+      <!-- chips flotantes -->
+      <div class="float-chips" id="heroChips"></div>
+      <!-- línea HUD con dato -->
+      <div class="hud-stat" data-depth="-10">
+        <span class="hud-line"></span>
+        <b data-t="hero.dato.valor"></b>
+        <small data-t="hero.dato.texto"></small>
+      </div>
+    </div>
+  </div>
+  <a href="#legal" class="scroll-cue" aria-label="Bajar"><span class="mono">Scroll</span><i></i></a>
+</section>
+
+<!-- Cinta de fuentes -->
+<div class="marquee" aria-hidden="true"><div class="marquee-track" id="marquee"></div></div>
+
+<!-- ================= 1. LEGAL ================= -->
+<section class="sec" id="legal" data-label="Constitución legal">
+  <div class="wrap">
+    <div class="split">
+      <div class="sec-head rv">
+        <p class="eyebrow"><span class="num">01</span><span data-t="legal.eyebrow"></span></p>
+        <h2 class="h2" data-t="legal.titulo"></h2>
+        <p class="lead" data-t="legal.bajada"></p>
+        <blockquote class="objeto"><span class="mono">Objeto social · Art. 2º</span><p data-t="legal.objetoSocial"></p></blockquote>
+      </div>
+      <div class="doc-stack rv" id="docStack"></div>
+    </div>
+
+    <div class="spec-grid rv" data-list="legal.datos" data-tpl="tpl-spec"></div>
+
+    <div class="req-row" data-list="legal.requisitos" data-tpl="tpl-req"></div>
+  </div>
+</section>
+
+<!-- ================= 2. CANVAS ================= -->
+<section class="sec sec-blue" id="canvas" data-label="Modelo Canvas">
+  <div class="wrap">
+    <div class="sec-head center rv">
+      <p class="eyebrow"><span class="num">02</span><span data-t="canvas.eyebrow"></span></p>
+      <h2 class="h2" data-t="canvas.titulo"></h2>
+      <p class="lead" data-t="canvas.bajada"></p>
+    </div>
+
+    <div class="two-sided rv" id="twoSided">
+      <svg class="flow" viewBox="0 0 1000 260" preserveAspectRatio="none" aria-hidden="true">
+        <path id="flowTop" d="M170 110 C 350 40, 650 40, 830 110" fill="none"/>
+        <path id="flowBot" d="M830 150 C 650 220, 350 220, 170 150" fill="none"/>
+      </svg>
+      <div class="side side-a">
+        <span class="side-ico"><svg><use href="#i-phone"/></svg></span>
+        <h3 data-t="canvas.ladoA.titulo"></h3><p data-t="canvas.ladoA.texto"></p>
+      </div>
+      <div class="side-core">
+        <img data-src="general.logo" alt="Beja" class="core-logo">
+        <span class="flow-lbl top mono">Reportes → información</span>
+        <span class="flow-lbl bot mono">Alertas, rutas y pago ←</span>
+      </div>
+      <div class="side side-b">
+        <span class="side-ico"><svg><use href="#i-building"/></svg></span>
+        <h3 data-t="canvas.ladoB.titulo"></h3><p data-t="canvas.ladoB.texto"></p>
+      </div>
+    </div>
+
+    <div class="bmc-preview rv" id="bmcPreview">
+      <div class="bmc-grid mini" data-list="canvas.bloques" data-tpl="tpl-bmc-mini"></div>
+      <div class="bmc-veil">
+        <button class="pill pill-glass" id="openCanvas"><span data-t="canvas.textoBoton"></span><i class="pill-arrow"><svg><use href="#i-arrow"/></svg></i></button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 3. PROPUESTA ================= -->
+<section class="sec" id="propuesta" data-label="Propuesta">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <p class="eyebrow"><span class="num">03</span><span data-t="propuesta.eyebrow"></span></p>
+      <h2 class="h2 xl" data-t="propuesta.titulo"></h2>
+    </div>
+    <div class="stat-trio rv" data-list="propuesta.stats" data-tpl="tpl-bigstat"></div>
+    <div class="problem rv">
+      <p class="mono honey" data-t="propuesta.problema.titulo"></p>
+      <p class="problem-txt" data-t="propuesta.problema.texto"></p>
+    </div>
+  </div>
+
+  <!-- Comparador tipo "antes / después" -->
+  <div class="compare rv" id="compare">
+    <canvas class="city" data-city="after" aria-hidden="true"></canvas>
+    <div class="compare-before" id="compareBefore"><canvas class="city" data-city="before" aria-hidden="true"></canvas></div>
+    <div class="compare-copy">
+      <h3 class="h3" data-t="propuesta.comparador.titulo"></h3>
+      <p data-t="propuesta.comparador.texto"></p>
+    </div>
+    <span class="compare-tag l" data-t="propuesta.comparador.etiquetaIzq"></span>
+    <span class="compare-tag r" data-t="propuesta.comparador.etiquetaDer"></span>
+    <div class="compare-handle" id="compareHandle" role="slider" tabindex="0" aria-label="Comparar mapas" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"><i></i></div>
+  </div>
+
+  <div class="wrap">
+    <div class="solution">
+      <div class="solution-copy rv">
+        <h3 class="h2" data-t="propuesta.solucion.titulo"></h3>
+        <p class="lead" data-t="propuesta.solucion.texto"></p>
+        <ol class="steps" data-list="propuesta.solucion.pasos" data-tpl="tpl-step"></ol>
+      </div>
+      <div class="track-card rv" data-tilt>
+        <canvas class="city" data-city="track" aria-hidden="true"></canvas>
+        <div class="reticle" id="reticle"><i></i><i></i><i></i><i></i>
+          <span class="reticle-lbl mono" id="reticleLbl">Validando…</span>
+        </div>
+        <div class="vote-bar"><span>Consenso comunitario</span><b id="voteVal">0%</b><i><em id="voteFill"></em></i></div>
+      </div>
+    </div>
+
+    <div class="dif-grid" data-list="propuesta.diferenciadores" data-tpl="tpl-dif"></div>
+
+    <figure class="quote rv">
+      <span class="quote-mark">“</span>
+      <blockquote data-t="propuesta.cita"></blockquote>
+      <figcaption class="mono" data-t="propuesta.citaAutor"></figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ================= 4. PRODUCCIÓN ================= -->
+<section class="sec sec-blue" id="produccion" data-label="Teoría de producción">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <p class="eyebrow"><span class="num">04</span><span data-t="produccion.eyebrow"></span></p>
+      <h2 class="h2" data-t="produccion.titulo"></h2>
+      <p class="lead" data-t="produccion.bajada"></p>
+    </div>
+    <div class="cost-duo">
+      <article class="cost-card fixed rv" data-tilt>
+        <header><h3 data-t="produccion.fijos.titulo"></h3><p data-t="produccion.fijos.subtitulo"></p></header>
+        <div class="cost-total"><b data-t="produccion.fijos.total"></b><span data-t="produccion.fijos.unidad"></span></div>
+        <ul class="ticks" data-flist-root="produccion.fijos.items"></ul>
+      </article>
+      <div class="cost-plus rv" aria-hidden="true">+</div>
+      <article class="cost-card var rv" data-tilt>
+        <header><h3 data-t="produccion.variables.titulo"></h3><p data-t="produccion.variables.subtitulo"></p></header>
+        <div class="cost-total"><b data-t="produccion.variables.total"></b><span data-t="produccion.variables.unidad"></span></div>
+        <ul class="ticks" data-flist-root="produccion.variables.items"></ul>
+      </article>
+    </div>
+
+    <div class="chart-card rv">
+      <div class="chart-head"><h3 class="h4" data-t="produccion.grafica.titulo"></h3><p class="mono muted" data-t="produccion.grafica.nota"></p></div>
+      <div class="chart-scroll"><svg id="cmeChart" class="chart" viewBox="0 0 900 340" role="img" aria-label="Costo medio por ciudad"></svg></div>
+    </div>
+
+    <div class="concept-row" data-list="produccion.conceptos" data-tpl="tpl-concept"></div>
+  </div>
+</section>
+
+<!-- ================= 5. DEMANDA ================= -->
+<section class="sec" id="demanda" data-label="Demanda y nicho">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <p class="eyebrow"><span class="num">05</span><span data-t="demanda.eyebrow"></span></p>
+      <h2 class="h2" data-t="demanda.titulo"></h2>
+      <p class="lead" data-t="demanda.bajada"></p>
+    </div>
+    <div class="counter-row rv" data-list="demanda.contadores" data-tpl="tpl-counter"></div>
+
+    <div class="demand-split">
+      <div class="city-bars rv">
+        <h3 class="h4" data-t="demanda.ciudadesTitulo"></h3>
+        <div class="bars" data-list="demanda.ciudades" data-tpl="tpl-bar"></div>
+        <p class="mono muted small" data-t="demanda.ciudadesFuente"></p>
+      </div>
+      <div class="qa rv">
+        <h3 class="h4" data-t="demanda.preguntasTitulo"></h3>
+        <div class="qa-tabs" id="qaTabs" role="tablist"></div>
+        <div class="qa-panel" id="qaPanel" role="tabpanel"></div>
+      </div>
+    </div>
+
+    <div class="fund rv">
+      <h3 class="h4" data-t="demanda.financiacionTitulo"></h3>
+      <div class="fund-row" data-list="demanda.financiacion" data-tpl="tpl-fund"></div>
+    </div>
+
+    <div class="refs rv">
+      <h3 class="h4" data-t="demanda.referentesTitulo"></h3>
+      <div class="refs-row" data-list="demanda.referentes" data-tpl="tpl-ref"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 6. COMPETENCIA ================= -->
+<section class="sec sec-blue" id="competencia" data-label="Competencia">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <p class="eyebrow"><span class="num">06</span><span data-t="competencia.eyebrow"></span></p>
+      <h2 class="h2" data-t="competencia.titulo"></h2>
+      <p class="lead" data-t="competencia.bajada"></p>
+    </div>
+
+    <div class="spectrum rv" id="spectrum">
+      <p class="mono muted" data-t="competencia.espectroTitulo"></p>
+      <div class="spectrum-bar"><span class="spectrum-marker" id="specMarker"><img data-src="general.logo" alt=""></span></div>
+      <div class="spectrum-stops" id="specStops"></div>
+    </div>
+
+    <div class="struct-row" data-list="competencia.estructuras" data-tpl="tpl-struct"></div>
+
+    <div class="table-wrap rv">
+      <table class="comp-table" id="compTable"></table>
+    </div>
+    <p class="note rv" data-t="competencia.indirectaNota"></p>
+  </div>
+</section>
+
+<!-- ================= 7. CONSUMIDOR ================= -->
+<section class="sec" id="consumidor" data-label="Teoría del consumidor">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <p class="eyebrow"><span class="num">07</span><span data-t="consumidor.eyebrow"></span></p>
+      <h2 class="h2" data-t="consumidor.titulo"></h2>
+    </div>
+    <div class="persona-row" data-list="consumidor.perfiles" data-tpl="tpl-persona"></div>
+
+    <div class="dap rv">
+      <div class="dap-copy">
+        <h3 class="h3" data-t="consumidor.dapTitulo"></h3>
+        <p class="lead" data-t="consumidor.dapTexto"></p>
+      </div>
+      <div class="dap-bubbles" id="dapBubbles"></div>
+    </div>
+
+    <div class="concept-row">
+      <article class="concept rv"><h3 data-t="consumidor.externalidad.titulo"></h3><p data-t="consumidor.externalidad.texto"></p></article>
+      <article class="concept rv"><h3 data-t="consumidor.elasticidad.titulo"></h3><p data-t="consumidor.elasticidad.texto"></p></article>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 8. PRECIO ================= -->
+<section class="sec sec-blue" id="precio" data-label="Precio y equilibrio">
+  <div class="wrap">
+    <div class="sec-head center rv">
+      <p class="eyebrow"><span class="num">08</span><span data-t="precio.eyebrow"></span></p>
+      <h2 class="h2 xl" data-t="precio.titulo"></h2>
+      <p class="lead" data-t="precio.bajada"></p>
+    </div>
+
+    <div class="plan-row" data-list="precio.planes" data-tpl="tpl-plan"></div>
+
+    <div class="be rv">
+      <div class="be-side">
+        <p class="mono honey" data-t="precio.formulaTexto"></p>
+        <div class="be-formula" id="beFormula"></div>
+        <div class="be-result"><b id="beQ">3,6</b><span>implementaciones al año<br><em id="beQr">→ 4 ciudades</em></span></div>
+        <p class="small muted" data-t="precio.lectura"></p>
+        <div class="be-sliders">
+          <p class="mono muted" data-t="precio.simuladorTitulo"></p>
+          <label for="slP">Precio por ciudad <output id="oP"></output></label>
+          <input type="range" id="slP" min="120" max="450" step="10">
+          <label for="slV">Costo variable por ciudad <output id="oV"></output></label>
+          <input type="range" id="slV" min="30" max="110" step="5">
+        </div>
+      </div>
+      <div class="be-chart"><svg id="beChart" class="chart" viewBox="0 0 640 400" role="img" aria-label="Gráfica de punto de equilibrio"></svg></div>
+    </div>
+
+    <div class="flow-card rv">
+      <h3 class="h4" data-t="precio.flujoTitulo"></h3>
+      <div class="cash" id="cash"></div>
+      <p class="honey" data-t="precio.capitalSemilla"></p>
+      <p class="mono muted small" data-t="precio.nota"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 9. BROCHURES ================= -->
+<section class="sec" id="brochures" data-label="Brochures">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <p class="eyebrow"><span class="num">09</span><span data-t="brochures.eyebrow"></span></p>
+      <h2 class="h2" data-t="brochures.titulo"></h2>
+      <p class="lead" data-t="brochures.bajada"></p>
+    </div>
+    <div class="bro-row" id="broRow"></div>
+    <div class="mv rv">
+      <div><p class="mono honey">Misión</p><p class="mv-txt" data-t="brochures.mision"></p></div>
+      <div><p class="mono honey">Visión</p><p class="mv-txt" data-t="brochures.vision"></p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 10. WEB ================= -->
+<section class="sec sec-blue" id="web" data-label="Página web">
+  <div class="wrap">
+    <div class="sec-head center rv">
+      <p class="eyebrow"><span class="num">10</span><span data-t="web.eyebrow"></span></p>
+      <h2 class="h2 xl" data-t="web.titulo"></h2>
+      <p class="lead" data-t="web.bajada"></p>
+    </div>
+
+    <div class="devices rv">
+      <div class="laptop float-c">
+        <div class="laptop-screen"><img data-src="web.capturaApp" alt="Captura de la app Beja con mapa de calor de Bogotá"></div>
+        <div class="laptop-base"></div>
+      </div>
+      <div class="phone sm float-a">
+        <div class="phone-screen">
+          <canvas class="city" data-city="phone2" aria-hidden="true"></canvas>
+          <div class="ui-top"><span class="ui-logo"><img data-src="general.logo" alt=""></span><span class="ui-chip">GPS 4.60, -74.07</span></div>
+          <div class="report-sheet">
+            <b>¿Qué estás viendo?</b>
+            <div class="cats"><span>Aviso</span><span>Riña</span><span>Robo</span><span>Médica</span><span class="on">Sospechosa</span><span>Accidente</span><span>Vandalismo</span></div>
+          </div>
+          <div class="ui-bottom"><span class="ui-route"><svg><use href="#i-pin"/></svg> 220 m · riesgo activo</span><span class="ui-sos">SOS</span></div>
+        </div>
+      </div>
+      <div class="dev-chip c1 float-b"><span class="d amber"></span>Alerta en verificación</div>
+      <div class="dev-chip c2 float-c"><span class="d blue"></span>Patrulla despachada · ETA 4 min</div>
+    </div>
+
+    <div class="feat-duo">
+      <article class="feat rv"><h3><svg><use href="#i-phone"/></svg><span data-t="web.appCiudadana.titulo"></span></h3><ul class="ticks" data-flist-root="web.appCiudadana.items"></ul></article>
+      <article class="feat rv"><h3><svg><use href="#i-chart"/></svg><span data-t="web.panel.titulo"></span></h3><ul class="ticks" data-flist-root="web.panel.items"></ul></article>
+    </div>
+
+    <div class="cycle rv">
+      <h3 class="h4" data-t="web.cicloTitulo"></h3>
+      <div class="cycle-row" id="cycleRow"></div>
+    </div>
+
+    <div class="demo rv">
+      <h3 class="h4" data-t="web.demoTitulo"></h3>
+      <ol class="demo-line" id="demoLine"></ol>
+    </div>
+
+    <div class="cta rv">
+      <div class="cta-hex" aria-hidden="true"><img data-src="general.logo" alt=""></div>
+      <h3 class="h2" data-t="web.ctaTitulo"></h3>
+      <p class="lead" data-t="web.ctaTexto"></p>
+      <a class="pill pill-honey big" data-href="general.enlaceApp" target="_blank" rel="noopener"><span data-t="general.textoBotonApp"></span><i class="pill-arrow"><svg><use href="#i-ext"/></svg></i></a>
+      <p class="mono muted small url-txt" data-t="general.enlaceApp"></p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ================= PIE ================= -->
+<footer class="foot">
+  <div class="wrap">
+    <p class="foot-frase" data-t="pie.frase"></p>
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <img data-src="general.logo" alt="" width="54" height="60">
+        <div><b data-t="general.razonSocial"></b><span class="muted" data-t="general.ciudad"></span><span class="mono honey" data-t="general.correo"></span></div>
+      </div>
+      <div>
+        <p class="mono muted" data-t="pie.equipoTitulo"></p>
+        <ul class="team" data-flist-root="pie.equipo"></ul>
+      </div>
+      <div>
+        <p class="mono muted"><span data-t="general.asignatura"></span> · <span data-t="general.etiquetaEvento"></span></p>
+        <p class="small muted" data-t="pie.fuentes"></p>
+      </div>
+    </div>
+    <p class="mono muted small">© <span data-t="general.anio"></span> <span data-t="general.razonSocial"></span> · <span data-t="hero.eyebrow"></span></p>
+  </div>
+</footer>
+
+<!-- ================= VISOR A PANTALLA COMPLETA ================= -->
+<div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-labelledby="viewerTitle">
+  <div class="viewer-bar">
+    <div class="viewer-title"><img data-src="general.logo" alt="" width="26" height="29"><div><b id="viewerTitle"></b><small id="viewerSub"></small></div></div>
+    <div class="viewer-tabs" id="viewerTabs" role="tablist"></div>
+    <div class="viewer-tools">
+      <button class="btn-icon" id="zoomOut" aria-label="Alejar"><svg><use href="#i-minus"/></svg></button>
+      <span class="mono" id="zoomVal">100%</span>
+      <button class="btn-icon" id="zoomIn" aria-label="Acercar"><svg><use href="#i-plus"/></svg></button>
+      <a class="pill pill-glass sm" id="viewerOpen" target="_blank" rel="noopener"><span>Abrir PDF</span><svg><use href="#i-ext"/></svg></a>
+      <button class="btn-close" id="viewerClose" aria-label="Cerrar"><svg><use href="#i-close"/></svg></button>
+    </div>
+  </div>
+  <div class="viewer-body" id="viewerBody"></div>
+</div>
+
+<!-- ================= PLANTILLAS ================= -->
+<template id="tpl-spec"><div class="spec"><span class="mono muted" data-f="etiqueta"></span><b data-f="valor"></b><small data-f="nota"></small></div></template>
+<template id="tpl-req"><article class="req rv" data-tilt><span class="req-ico"><svg><use href="#i-shield"/></svg></span><h3 data-f="titulo"></h3><p data-f="texto"></p></article></template>
+<template id="tpl-bmc-mini"><div class="bmc-cell" data-fclass="id"><h4 data-f="titulo"></h4><ul data-flist="items"></ul></div></template>
+<template id="tpl-bigstat"><div class="bigstat"><b class="count" data-fcount="valor"></b><span data-f="etiqueta"></span><small class="mono" data-f="fuente"></small></div></template>
+<template id="tpl-step"><li class="step"><b data-f="titulo"></b><span data-f="texto"></span></li></template>
+<template id="tpl-dif"><article class="dif rv" data-tilt><span class="dif-ico"><svg><use data-ficon="icono"/></svg></span><h3 data-f="titulo"></h3><p data-f="texto"></p></article></template>
+<template id="tpl-concept"><article class="concept rv"><h3 data-f="titulo"></h3><p data-f="texto"></p></article></template>
+<template id="tpl-counter"><div class="counter"><b class="count" data-fcount="valor"></b><span data-f="etiqueta"></span><small class="mono" data-f="fuente"></small></div></template>
+<template id="tpl-bar"><div class="bar" data-fvar="valor"><span data-f="nombre"></span><i><em></em></i><b data-fpct="valor"></b></div></template>
+<template id="tpl-fund"><div class="fund-item"><span class="hex-dot"></span><b data-f="titulo"></b><p data-f="texto"></p></div></template>
+<template id="tpl-ref"><article class="ref"><span class="mono honey" data-f="pais"></span><h4 data-f="nombre"></h4><p data-f="texto"></p></article></template>
+<template id="tpl-struct"><article class="struct rv"><span class="mono muted" data-f="lado"></span><h3 data-f="nombre"></h3><p data-f="texto"></p></article></template>
+<template id="tpl-persona"><article class="persona rv" data-tilt><span class="persona-rol mono" data-f="rol"></span><h3 data-f="nombre"></h3><small data-f="detalle"></small><p class="persona-q">¿Por qué?</p><p data-f="porque"></p><p class="persona-q">¿Cuánto paga?</p><p class="persona-pay" data-f="paga"></p></article></template>
+<template id="tpl-plan"><article class="plan rv" data-fflag="destacado" data-tilt><h3 data-f="nombre"></h3><b data-f="precio"></b><span data-f="unidad"></span><small class="mono" data-f="costo"></small></article></template>
+
+<script src="contenido.js"></script>
+<script src="assets/js/main.js"></script>
+</body>
+</html>

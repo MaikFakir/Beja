@@ -1,0 +1,64 @@
+BEJA · WEB DE PRESENTACIÓN (Shark Tank 2026)
+=============================================
+
+CÓMO ABRIRLA
+------------
+Doble clic en index.html. Funciona sin internet (las fuentes están incluidas en assets/fonts).
+Para publicarla, sube la carpeta completa a GitHub Pages (igual que la app) o a cualquier hosting.
+
+Para presentar: las teclas  →  /  AvPág  saltan a la siguiente sección y  ←  /  RePág  a la anterior.
+El botón "Índice" (arriba a la derecha) muestra las 10 secciones en orden.
+
+
+DÓNDE SE EDITA TODO
+-------------------
+  contenido.js   ← TODOS los textos, títulos, cifras, enlaces, imágenes y documentos.
+
+Ábrelo con el Bloc de notas o VS Code. Cambia solo lo que está entre comillas.
+  • <em>texto</em> pinta el texto en naranja (se usa en los títulos).
+  • <br> hace un salto de línea.
+  • No borres comas, llaves { } ni corchetes [ ].
+Guarda y recarga la página (F5).
+
+Ejemplos rápidos:
+  - Cambiar el enlace de la app ........ general.enlaceApp
+  - Cambiar el título de la portada .... hero.titulo
+  - Cambiar precio / costos del Q* ..... precio.calculo  (la gráfica y la fórmula se recalculan solas)
+  - Cambiar ciudades de la gráfica ..... demanda.ciudades
+  - Cambiar el equipo ................... pie.equipo
+
+
+CAMBIAR EL RUT, LOS ESTATUTOS O UN BROCHURE
+-------------------------------------------
+Cada documento en contenido.js tiene:
+    pdf:          "docs/RUT_ABEJA.pdf"                 ← el PDF que abre el botón "Abrir PDF"
+    paginas:      "assets/docs/rut/pag-{n}.jpg"        ← imágenes de cada página ({n} = 1, 2, 3…)
+    totalPaginas: 7
+
+Opción A (más rápida): reemplaza el PDF en la carpeta docs/ con el mismo nombre
+  y pon  totalPaginas: 0  → el visor mostrará el PDF directamente.
+Opción B (se ve mejor): exporta cada página del PDF como JPG (pag-1.jpg, pag-2.jpg…),
+  cópialas en su carpeta dentro de assets/docs/ y ajusta totalPaginas.
+
+Modelo Canvas: la imagen está en assets/img/canvas.jpg (canvas.imagenLienzo).
+El "Lienzo actualizado" se arma con canvas.bloques.
+
+
+BROCHURES
+---------
+Diseño editable en: fuentes/brochure.html (se ve en el navegador).
+Para regenerar JPG + PDF:   python fuentes/exportar_brochures.py
+(requiere: pip install playwright  y  playwright install chromium)
+Salida: assets/docs/brochure/*.jpg  y  docs/Brochure_*_Beja.pdf
+
+
+ESTRUCTURA
+----------
+index.html                 estructura de la página
+contenido.js               contenido editable
+assets/css/styles.css      estilos (colores en :root al inicio)
+assets/js/main.js          animaciones, gráficas, visor a pantalla completa
+assets/img/                logo SVG, capturas, modelos del teléfono y dispositivos (PNG sin fondo), QR
+assets/docs/               páginas de Estatutos, RUT y brochures en JPG
+docs/                      PDFs originales y brochures
+fuentes/                   brochure editable y script de exportación

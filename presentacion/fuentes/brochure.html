@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Brochures Beja</title>
+<!-- Fuente editable de los brochures. Se exporta a PDF/JPG con fuentes/exportar_brochures.py -->
+<link rel="stylesheet" href="../assets/css/fonts.css">
+<style>
+:root{--ink:#04060b;--navy:#07122a;--blue:#2f7bff;--blue-soft:#8db8ff;--honey:#f5a524;--fg:#eef2f8;--muted:#9aa6bb;--line:rgba(150,180,255,.16);--alert:#ff4d6a;--ok:#2ee6a6;
+  --display:"Sora Local",sans-serif;--body:"Manrope Local",sans-serif;--mono:"JetBrains Mono Local",monospace;color-scheme:dark}
+@page{size:297mm 210mm;margin:0}
+*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;background:#222;font:400 11px/1.5 var(--body);color:var(--fg)}
+.page{position:relative;width:1123px;height:794px;overflow:hidden;background:var(--ink);display:grid;grid-template-columns:repeat(3,1fr);margin:0 auto 20px;page-break-after:always;break-after:page}
+.page.portrait{width:794px;height:1123px;display:block}
+@media print{body{background:none}.page{margin:0}}
+.panel{position:relative;padding:44px 38px;overflow:hidden;border-right:1px dashed rgba(255,255,255,.06);display:flex;flex-direction:column}
+.panel:last-child{border-right:0}
+.glow-b{background:radial-gradient(ellipse 90% 60% at 80% 0%,rgba(47,123,255,.35),transparent 70%),radial-gradient(ellipse 70% 50% at 0% 100%,rgba(47,123,255,.18),transparent 70%),var(--navy)}
+.glow-h{background:radial-gradient(ellipse 80% 50% at 50% 100%,rgba(245,165,36,.18),transparent 70%),var(--ink)}
+.hexbg::after{content:"";position:absolute;inset:0;opacity:.6;pointer-events:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='69' viewBox='0 0 40 69'%3E%3Cpath d='M20 0 40 11.5v23L20 46 0 34.5v-23Z M20 46v23' fill='none' stroke='%238db8ff' stroke-opacity='.08'/%3E%3C/svg%3E");-webkit-mask-image:radial-gradient(ellipse 80% 60% at 70% 30%,#000,transparent 80%)}
+.panel>*{position:relative;z-index:1}
+.mono{font-family:var(--mono);font-size:8.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.honey{color:var(--honey)}
+em{font-style:normal;color:var(--honey)}
+h1,h2,h3{font-family:var(--display);font-weight:200;letter-spacing:-.03em;margin:0}
+h1{font-size:44px;line-height:1.02}
+h2{font-size:28px;line-height:1.08;margin:.4em 0 .5em}
+h3{font-size:15px;font-weight:400;letter-spacing:-.01em;margin:0 0 4px}
+p{margin:0 0 10px;color:var(--muted)}
+.lead{font-size:12.5px;color:var(--fg)}
+.brand{display:flex;align-items:center;gap:10px}
+.brand img{width:34px;filter:drop-shadow(0 0 10px rgba(245,165,36,.5))}
+.brand b{font-family:var(--display);font-weight:600;font-size:15px;display:block;line-height:1}
+.brand small{font-family:var(--mono);font-size:7px;letter-spacing:.2em;color:var(--muted);text-transform:uppercase}
+.eyebrow{display:flex;align-items:center;gap:8px}
+.eyebrow i{width:8px;height:9px;background:var(--honey);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);box-shadow:0 0 8px var(--honey)}
+.bigno{font-family:var(--display);font-weight:200;font-size:64px;line-height:.9;letter-spacing:-.05em;background:linear-gradient(180deg,#fff 30%,#8a94a8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.bigno.h{background:none;color:var(--honey)}
+.rule{height:1px;background:linear-gradient(90deg,var(--honey),transparent);margin:14px 0}
+.list{list-style:none;padding:0;margin:0;display:grid;gap:7px}
+.list li{position:relative;padding-left:16px;color:var(--fg);font-size:11px}
+.list li::before{content:"";position:absolute;left:0;top:.45em;width:7px;height:8px;background:var(--honey);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
+.card{padding:14px 16px;border-radius:14px;border:1px solid var(--line);background:rgba(120,160,255,.06)}
+.card+.card{margin-top:10px}
+.steps{display:grid;gap:10px;counter-reset:s}
+.step{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start;counter-increment:s}
+.step::before{content:counter(s,decimal-leading-zero);font-family:var(--mono);font-size:9px;color:var(--honey);border:1px solid rgba(245,165,36,.5);border-radius:5px;padding:3px 0;text-align:center}
+.step b{display:block;font-family:var(--display);font-weight:400;font-size:13px}
+.step span{color:var(--muted);font-size:10.5px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:var(--honey);color:#1a1204;font-weight:700;font-size:10.5px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:rgba(8,12,24,.8);font-size:9.5px}
+.chip i{width:7px;height:7px;border-radius:50%}
+.float-hex{position:absolute;clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%);background:linear-gradient(150deg,rgba(245,165,36,.55),rgba(245,165,36,.05))}
+.float-hex.b{background:linear-gradient(150deg,rgba(141,184,255,.45),rgba(47,123,255,.05))}
+.mt-auto{margin-top:auto}
+.stat3{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat3 div{padding:10px 0;border-top:1px solid var(--line)}
+.stat3 b{font-family:var(--display);font-weight:200;font-size:30px;letter-spacing:-.04em;display:block;line-height:1}
+.stat3 span{font-size:9.5px;color:var(--muted)}
+.price{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:baseline;padding:10px 0;border-top:1px solid var(--line)}
+.price b{font-family:var(--display);font-weight:300;font-size:22px;color:var(--fg)}
+.price.h b{color:var(--honey)}
+.price span{font-size:10.5px}
+.price small{grid-column:1/-1;color:var(--muted);font-size:9.5px}
+.phase{display:grid;grid-template-columns:44px 1fr;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.phase .mono{color:var(--honey);padding-top:2px}
+.phase b{font-size:11px;display:block}
+.phase span{font-size:10px;color:var(--muted)}
+.qr{width:92px;height:92px;padding:8px;border-radius:12px;background:rgba(4,6,11,.9);border:1px solid rgba(245,165,36,.4)}
+.team{list-style:none;padding:0;margin:0;display:grid;gap:3px;font-size:10.5px;color:var(--fg)}
+.cover-title{font-size:50px;line-height:1}
+.devices-img{width:122%;max-width:none;margin-left:-11%;filter:drop-shadow(0 30px 40px rgba(0,0,0,.7))}
+.phone-img{filter:drop-shadow(0 30px 40px rgba(0,0,0,.8))}
+.legend{display:grid;gap:8px}
+.legend>div{display:flex;gap:10px;align-items:center}
+.legend i{width:26px;height:26px;border-radius:50%;flex:none}
+.legend b{display:block;font-size:12px}
+.legend span{font-size:10.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<!-- ================= CORPORATIVO · EXTERIOR ================= -->
+<section class="page" id="corporativo-1">
+  <!-- solapa interior -->
+  <div class="panel glow-h">
+    <p class="mono honey">Misión</p>
+    <h2 style="font-size:21px" data-t="brochures.mision"></h2>
+    <div class="rule"></div>
+    <p class="mono honey">Visión</p>
+    <h2 style="font-size:21px" data-t="brochures.vision"></h2>
+    <div class="rule"></div>
+    <p class="mono">Lo que nos mueve</p>
+    <ul class="list">
+      <li>Prevenir antes que reaccionar</li>
+      <li>Información validada por la comunidad</li>
+      <li>Datos anónimos por diseño (Ley 1581 de 2012)</li>
+      <li>Tecnología replicable en América Latina</li>
+    </ul>
+  </div>
+  <!-- contraportada -->
+  <div class="panel glow-b hexbg">
+    <p class="mono">Equipo fundador</p>
+    <ul class="team" style="margin:10px 0 18px" id="team"></ul>
+    <div class="rule"></div>
+    <p class="mono">Datos de la sociedad</p>
+    <div class="stat3" style="grid-template-columns:1fr">
+      <div><span>Razón social</span><b style="font-size:16px">ABEJA SEGURIDAD S.A.S.</b></div>
+      <div><span>NIT (simulado) · CIIU</span><b style="font-size:16px">800.139.422-0 · 6201 / 6311</b></div>
+      <div><span>Domicilio</span><b style="font-size:16px">CL 72 6 55 · Bogotá D.C.</b></div>
+    </div>
+    <div class="mt-auto" style="display:flex;gap:14px;align-items:center">
+      <img class="qr" src="../assets/img/qr-app.svg" alt="QR a la app">
+      <div><p class="mono honey" style="margin-bottom:4px">Escanea y prueba la app</p><p style="color:var(--fg);margin:0" data-t="general.correo"></p><p style="margin:0;font-size:9.5px" data-t="general.enlaceApp"></p></div>
+    </div>
+  </div>
+  <!-- portada -->
+  <div class="panel glow-b hexbg" style="justify-content:space-between">
+    <div class="float-hex" style="width:140px;height:160px;right:-40px;top:120px"></div>
+    <div class="float-hex b" style="width:60px;height:70px;left:30px;top:250px"></div>
+    <div class="brand"><img src="../assets/img/logo-beja.svg" alt=""><div><b>Beja</b><small>Colmena segura</small></div></div>
+    <div style="text-align:center">
+      <img src="../assets/img/logo-beja.svg" alt="" style="width:150px;margin:0 auto 26px;filter:drop-shadow(0 0 40px rgba(245,165,36,.6))">
+      <p class="mono honey">Red comunitaria de vigilancia preventiva</p>
+      <h1 class="cover-title">BEJA <em>S.A.S.</em></h1>
+      <p class="lead" style="margin-top:12px">Convertimos lo que la comunidad ve en información que previene.</p>
+    </div>
+    <p class="mono" style="text-align:center">Brochure corporativo · 2026</p>
+  </div>
+</section>
+
+<!-- ================= CORPORATIVO · INTERIOR ================= -->
+<section class="page" id="corporativo-2">
+  <div class="panel glow-b hexbg">
+    <div class="eyebrow"><i></i><span class="mono">Quiénes somos</span></div>
+    <h2>Un sistema de alerta preventiva y de <em>cuidado ciudadano.</em></h2>
+    <p class="lead">La persona no espera a ser víctima para usarlo: reporta lo sospechoso que ve, la comunidad lo confirma o lo descarta y nace un mapa vivo de zonas seguras y peligrosas.</p>
+    <div class="rule"></div>
+    <div class="stat3">
+      <div><b>69,2%</b><span>de los delitos no se denuncia (DANE)</span></div>
+      <div><b>50%</b><span>se siente inseguro en su ciudad</span></div>
+      <div><b>7</b><span>categorías de reporte + SOS</span></div>
+      <div><b>0</b><span>pesos paga el ciudadano</span></div>
+    </div>
+    <div class="card mt-auto"><p class="mono honey" style="margin-bottom:6px">Nuestra promesa</p><p style="margin:0;color:var(--fg);font-family:var(--display);font-weight:300;font-size:15px;line-height:1.35">«Lo que no se denuncia no existe para quien decide dónde poner un policía. Beja lo hace visible.»</p></div>
+  </div>
+  <div class="panel glow-h" style="align-items:center">
+    <div class="eyebrow" style="align-self:flex-start"><i></i><span class="mono">Cómo funciona</span></div>
+    <img class="phone-img" src="../assets/img/phone-app.png" alt="" style="width:230px;margin:14px 0 10px">
+    <div class="steps" style="width:100%">
+      <div class="step"><div><b>Reporta</b><span>En segundos, desde el celular, sin descargar nada.</span></div></div>
+      <div class="step"><div><b>Valida</b><span>Los vecinos a menos de 50 m votan «Real» o «Falso».</span></div></div>
+      <div class="step"><div><b>Previene</b><span>La comunidad se cuida y la autoridad decide dónde actuar.</span></div></div>
+    </div>
+  </div>
+  <div class="panel glow-b">
+    <div class="eyebrow"><i></i><span class="mono">Modelo de negocio</span></div>
+    <h2>No vendemos una app. Vendemos <em>la información.</em></h2>
+    <p>Plataforma de dos lados: el ciudadano la usa gratis y genera la información; las entidades de seguridad pagan por el sistema y por los datos.</p>
+    <div class="phase"><span class="mono">Año 1</span><div><b>Piloto con la Policía Nacional</b><span>Una ciudad con alta percepción de inseguridad.</span></div></div>
+    <div class="phase"><span class="mono">Año 2</span><div><b>Escala nacional</b><span>Contrato para las 5 principales ciudades.</span></div></div>
+    <div class="phase"><span class="mono">Año 3</span><div><b>Modelo mixto</b><span>Policía + gobernaciones y alcaldías (FONSET, FONSECON).</span></div></div>
+    <div class="phase"><span class="mono">Año 3+</span><div><b>Datos y región</b><span>Plataformas de mapeo, empresas y América Latina.</span></div></div>
+    <div class="mt-auto"><span class="pill">Punto de equilibrio: 4 ciudades al año</span></div>
+  </div>
+</section>
+
+<!-- ================= COMERCIAL · EXTERIOR ================= -->
+<section class="page" id="comercial-1">
+  <div class="panel glow-h">
+    <div class="eyebrow"><i></i><span class="mono">Por qué ahora</span></div>
+    <h2>Lo que no se denuncia, <em>no existe</em> para quien decide.</h2>
+    <div class="card"><div class="bigno h">69,2%</div><p style="margin:6px 0 0">de los delitos no llega a las autoridades. La principal razón: «las autoridades no hacen nada» (46,1%).</p></div>
+    <div class="card"><div class="bigno">2%</div><p style="margin:6px 0 0">de las calles de Bogotá concentró el 100% de los homicidios. El delito está en pocos puntos.</p></div>
+    <div class="card"><div class="bigno">–57%</div><p style="margin:6px 0 0">delitos denunciados con patrullaje focalizado en puntos críticos (Blattman et al.).</p></div>
+  </div>
+  <div class="panel glow-b hexbg">
+    <p class="mono honey">Agende una demostración</p>
+    <h2>Tres minutos para ver el sistema <em>funcionando.</em></h2>
+    <div class="steps">
+      <div class="step"><div><b>Un ciudadano reporta</b><span>Actividad sospechosa desde el celular.</span></div></div>
+      <div class="step"><div><b>La comunidad confirma</b><span>La alerta pasa a roja y aparece en su panel.</span></div></div>
+      <div class="step"><div><b>Usted despacha</b><span>Unidad asignada y alerta de zona enviada.</span></div></div>
+      <div class="step"><div><b>Usted decide</b><span>Mapa de calor histórico para planear.</span></div></div>
+    </div>
+    <div class="mt-auto" style="display:flex;gap:14px;align-items:center">
+      <img class="qr" src="../assets/img/qr-app.svg" alt="QR a la app">
+      <div><p style="color:var(--fg);margin:0 0 2px;font-size:13px;font-family:var(--display)">ABEJA SEGURIDAD S.A.S.</p><p style="margin:0" class="honey" data-t="general.correo"></p><p style="margin:0;font-size:9.5px">Bogotá D.C. · Colombia</p></div>
+    </div>
+  </div>
+  <div class="panel glow-b hexbg" style="justify-content:space-between">
+    <div class="float-hex" style="width:90px;height:104px;right:24px;top:40px"></div>
+    <div class="brand"><img src="../assets/img/logo-beja.svg" alt=""><div><b>Beja</b><small>Para entidades de seguridad</small></div></div>
+    <div>
+      <p class="mono honey">Brochure comercial</p>
+      <h1>La información que le falta al Estado <em>para prevenir.</em></h1>
+      <p class="lead" style="margin-top:14px">Mapa de riesgo construido por la comunidad, validado por consenso y listo para su centro de mando.</p>
+    </div>
+    <img src="../assets/img/app-mapa.jpg" alt="" style="width:100%;border-radius:10px;border:1px solid var(--line);box-shadow:0 20px 40px -10px rgba(0,0,0,.8),0 0 40px -10px rgba(47,123,255,.6)">
+  </div>
+</section>
+
+<!-- ================= COMERCIAL · INTERIOR ================= -->
+<section class="page" id="comercial-2">
+  <div class="panel glow-b hexbg">
+    <div class="eyebrow"><i></i><span class="mono">Cómo genera información</span></div>
+    <h2>La cifra oculta, <em>por fin en el mapa.</em></h2>
+    <p>Beja captura la sospecha antes del delito. Cada alerta que se cierra queda guardada de forma anónima:</p>
+    <ul class="list" style="margin-bottom:14px">
+      <li>Ubicación, categoría, hora y día</li>
+      <li>Número de reportes y refutaciones</li>
+      <li>Minutos hasta confirmación, despacho y atención</li>
+      <li>Estado final (atendida, resuelta, falsa)</li>
+    </ul>
+    <div class="card"><p class="mono honey" style="margin-bottom:4px">Nunca se guarda</p><p style="margin:0;color:var(--fg)">Quién reportó ni sus notas. Datos anónimos por diseño.</p></div>
+    <div class="stat3 mt-auto">
+      <div><b>18.190</b><span>frentes de seguridad activos (Policía, 2024)</span></div>
+      <div><b>97,5%</b><span>se conecta a Internet desde el celular</span></div>
+      <div><b>61,4%</b><span>de bogotanos se informa de seguridad por WhatsApp o redes</span></div>
+      <div><b>8 min</b><span>para que una alerta roja baje a amarilla si nadie la reactiva</span></div>
+    </div>
+  </div>
+  <div class="panel glow-h" style="padding-inline:26px">
+    <div class="eyebrow"><i></i><span class="mono">Qué gana su entidad</span></div>
+    <img class="devices-img" src="../assets/img/dispositivos-app.png" alt="" style="margin-top:16px;margin-bottom:14px">
+    <ul class="list">
+      <li>Mapa táctico con incidentes activos y mapa de calor por categoría</li>
+      <li>Despacho de unidades con código y tiempo estimado</li>
+      <li>Alertas por zona a ciudadanos dentro de un radio</li>
+      <li>Exportación del historial en CSV para análisis</li>
+      <li>Gestión de usuarios, reputación y soporte</li>
+    </ul>
+    <div class="card mt-auto"><p class="mono honey" style="margin-bottom:4px">Sin infraestructura nueva</p><p style="margin:0;color:var(--fg)">PWA en la nube: se implementa por ciudad sin instalar cámaras ni equipos.</p></div>
+  </div>
+  <div class="panel glow-b">
+    <div class="eyebrow"><i></i><span class="mono">Modelo de contratación</span></div>
+    <h2 style="font-size:24px">Licencia + implementación + soporte.</h2>
+    <div class="price h"><span>Licencia e implementación</span><b>$250 M</b><small>Por ciudad · pago único</small></div>
+    <div class="price"><span>Soporte y mantenimiento</span><b>$50 M</b><small>Al año por ciudad</small></div>
+    <div class="price"><span>Paquete de datos / API</span><b>$30 M</b><small>Al año por cliente</small></div>
+    <p class="mono" style="margin-top:14px">Ruta del piloto</p>
+    <div class="phase"><span class="mono">01</span><div><b>Contratación directa CTeI</b><span>Ley 1150 de 2007 · una ciudad.</span></div></div>
+    <div class="phase"><span class="mono">02</span><div><b>Medición de resultados</b><span>Tiempos de respuesta y cobertura.</span></div></div>
+    <div class="phase"><span class="mono">03</span><div><b>Escalamiento</b><span>Tienda Virtual del Estado · FONSET / FONSECON.</span></div></div>
+    <p class="mt-auto" style="font-size:9.5px">Un contrato de cámaras LPR en Bogotá costó ≈ $14.339 M. Beja cuesta una fracción y ve lo que ninguna cámara capta.</p>
+  </div>
+</section>
+
+<!-- ================= CIUDADANO · VOLANTE ================= -->
+<section class="page portrait glow-b hexbg" id="ciudadano-1">
+  <div class="panel" style="height:100%;padding:56px 60px">
+    <div class="float-hex" style="width:200px;height:230px;right:-60px;top:160px"></div>
+    <div class="float-hex b" style="width:80px;height:92px;left:40px;top:480px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div class="brand"><img src="../assets/img/logo-beja.svg" alt=""><div><b>Beja</b><small>Colmena segura</small></div></div>
+      <span class="chip"><i style="background:var(--ok);box-shadow:0 0 8px var(--ok)"></i>Gratis · sin descargar nada</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1.1fr .9fr;gap:20px;align-items:center;margin-top:40px">
+      <div>
+        <p class="mono honey">Tu barrio te cuida. Tú cuidas tu barrio.</p>
+        <h1 style="font-size:58px">¿Viste algo raro?<br><em>Repórtalo.</em></h1>
+        <p class="lead" style="font-size:15px;margin-top:16px">En segundos avisas a tus vecinos, ellos lo confirman y todos sabemos por dónde caminar más seguros.</p>
+      </div>
+      <img class="phone-img" src="../assets/img/phone-app.png" alt="" style="width:100%">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:26px">
+      <div>
+        <p class="mono honey" style="margin-bottom:12px">Cómo reportar</p>
+        <div class="steps">
+          <div class="step"><div><b>Abre Beja</b><span>Escanea el código. Funciona desde el navegador.</span></div></div>
+          <div class="step"><div><b>Elige qué viste</b><span>Aviso, riña, robo, emergencia médica, sospechosa, accidente o vandalismo.</span></div></div>
+          <div class="step"><div><b>Tus vecinos validan</b><span>Votan «Real» o «Falso». Tu reputación crece cuando aciertas.</span></div></div>
+          <div class="step"><div><b>¿Emergencia?</b><span>Mantén el botón SOS: se activa en 3 segundos.</span></div></div>
+        </div>
+      </div>
+      <div>
+        <p class="mono honey" style="margin-bottom:12px">Cómo ver las zonas seguras</p>
+        <div class="legend">
+          <div><i style="background:radial-gradient(circle,var(--ok),transparent 70%)"></i><div><b>Zona verificada</b><span>La comunidad la marca como tranquila.</span></div></div>
+          <div><i style="background:radial-gradient(circle,var(--honey),transparent 70%)"></i><div><b>En verificación</b><span>Hay un reporte y los vecinos están votando.</span></div></div>
+          <div><i style="background:radial-gradient(circle,var(--alert),transparent 70%)"></i><div><b>Riesgo confirmado</b><span>Te avisamos si te acercas a menos de 220 m.</span></div></div>
+          <div><i style="background:radial-gradient(circle,var(--blue),transparent 70%)"></i><div><b>Atendida</b><span>La autoridad ya envió una patrulla.</span></div></div>
+        </div>
+        <div class="card" style="margin-top:16px"><p style="margin:0;color:var(--fg)"><b class="honey">Ruta segura:</b> elige tu destino y Beja te lleva esquivando los puntos de riesgo.</p></div>
+      </div>
+    </div>
+    <div class="mt-auto" style="display:flex;gap:18px;align-items:center;padding-top:22px;border-top:1px solid var(--line)">
+      <img class="qr" src="../assets/img/qr-app.svg" alt="QR a la app" style="width:110px;height:110px">
+      <div><p class="mono honey" style="margin-bottom:4px">Escanea y únete a la colmena</p><p style="margin:0;color:var(--fg);font-size:14px;font-family:var(--display)" data-t="general.enlaceApp"></p><p style="margin:4px 0 0">Tus reportes son anónimos. Nunca guardamos quién reportó.</p></div>
+    </div>
+  </div>
+</section>
+
+<script src="../contenido.js"></script>
+<script>
+  const C = window.BEJA || {}, get = (p) => p.split(".").reduce((a, k) => (a == null ? a : a[k]), C);
+  document.querySelectorAll("[data-t]").forEach((el) => { const v = get(el.dataset.t); if (v != null) el.innerHTML = v; });
+  document.getElementById("team").innerHTML = (get("pie.equipo") || []).map((n) => `<li>${n}</li>`).join("");
+</script>
+</body>
+</html>

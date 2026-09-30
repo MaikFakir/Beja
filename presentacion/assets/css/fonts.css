@@ -1,0 +1,11 @@
+/* Fuentes locales (funcionan sin internet) */
+@font-face{font-family:"Sora Local";font-style:normal;font-weight:200;font-display:swap;src:url(../fonts/sora-latin-200-normal.woff2) format("woff2")}
+@font-face{font-family:"Sora Local";font-style:normal;font-weight:300;font-display:swap;src:url(../fonts/sora-latin-300-normal.woff2) format("woff2")}
+@font-face{font-family:"Sora Local";font-style:normal;font-weight:400;font-display:swap;src:url(../fonts/sora-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"Sora Local";font-style:normal;font-weight:600;font-display:swap;src:url(../fonts/sora-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Manrope Local";font-style:normal;font-weight:400;font-display:swap;src:url(../fonts/manrope-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"Manrope Local";font-style:normal;font-weight:500;font-display:swap;src:url(../fonts/manrope-latin-500-normal.woff2) format("woff2")}
+@font-face{font-family:"Manrope Local";font-style:normal;font-weight:600;font-display:swap;src:url(../fonts/manrope-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Manrope Local";font-style:normal;font-weight:700;font-display:swap;src:url(../fonts/manrope-latin-700-normal.woff2) format("woff2")}
+@font-face{font-family:"JetBrains Mono Local";font-style:normal;font-weight:400;font-display:swap;src:url(../fonts/jetbrains-mono-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"JetBrains Mono Local";font-style:normal;font-weight:500;font-display:swap;src:url(../fonts/jetbrains-mono-latin-500-normal.woff2) format("woff2")}
