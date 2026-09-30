@@ -45,6 +45,14 @@ window.BEJA = {
     bajada: "Los ciudadanos reportan lo sospechoso que ven, la comunidad lo valida y nace un mapa vivo de zonas seguras y peligrosas. Gratis para quien lo usa. Estratégico para quien decide dónde poner un policía.",
     botonPrincipal: "Descubrir Beja",
     botonSecundario: "Ver la app",
+    /* Botón a la presentación en Canva (se abre en otra pestaña) */
+    botonCanva: "Presentación Canva",
+    enlaceCanva: "https://www.canva.com/design/DAHWh5mnGTk/a6v0SPjNmhnVgfTvp3nqCw/edit",
+    /* Botón que abre el video en pantalla completa. Cambia el archivo en assets/video/ */
+    botonVideo: "Ver video",
+    video: "assets/video/beja-video.mp4",
+    videoPortada: "assets/video/beja-video-portada.jpg",
+    videoTitulo: "Beja en acción",
     dato: { valor: "69,2%", texto: "de los delitos en Colombia no se denuncia" },
     chips: [
       { tipo: "ok",    texto: "Colmena activa · 52 nodos" },
@@ -390,6 +398,14 @@ window.BEJA = {
         totalPaginas: 1
       }
     ],
+    /* Infografía que se abre en pantalla completa desde la sección de brochures */
+    infografia: {
+      etiqueta: "Infografía",
+      titulo: "Beja en <em>una sola imagen.</em>",
+      texto: "Base legal, propuesta B2G, la cifra oculta del 69,2%, precios y la red colmena: todo el modelo resumido para compartir.",
+      imagen: "assets/img/infografia-beja.jpg",
+      textoBoton: "Ver infografía completa"
+    },
     mision: "Convertir la observación de los ciudadanos en información preventiva confiable para que comunidades y autoridades se anticipen al delito.",
     vision: "En 2030, ser el sistema de referencia en información preventiva de seguridad ciudadana en Colombia y América Latina."
   },

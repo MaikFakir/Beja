@@ -399,6 +399,18 @@
       { label: get("canvas.tituloLienzoActual"), html: `<div class="viewer-html">${grid.outerHTML}</div>` }
     ], active);
   }
+  function openVideo() {
+    const v = get("hero.video"), poster = get("hero.videoPortada") || "";
+    openViewer(get("hero.videoTitulo") || "Video", get("general.marca") + " · " + get("general.etiquetaEvento"), [
+      { label: "Video", html: `<div class="video-wrap"><video src="${v}" poster="${poster}" controls autoplay playsinline preload="auto"></video></div>`, link: v, linkLabel: "Abrir video" }
+    ]);
+  }
+  function openInfo() {
+    const img = get("brochures.infografia.imagen");
+    openViewer("Infografía " + get("general.marca"), get("general.razonSocial"), [
+      { label: "Infografía", html: `<div class="pages"><figure><img src="${img}" alt="Infografía de Beja S.A.S."></figure></div>`, link: img, linkLabel: "Abrir imagen", base: 1600 }
+    ]);
+  }
   function openBrochure(id) {
     const L = get("brochures.lista") || [];
     openViewer("Brochures " + get("general.marca"), get("brochures.bajada"), L.map((b) => ({ label: b.titulo, html: pagesHTML(b), link: b.pdf, base: b.totalPaginas === 1 ? 760 : 1200 })), Math.max(0, L.findIndex((b) => b.id === id)));
@@ -530,6 +542,8 @@
     heroNet(); compareSlider(); reticleLoop(); scrollUI(); pointerFX(); reveals();
 
     $("#openCanvas").addEventListener("click", () => openCanvas(0));
+    if (get("hero.video")) $("#openVideo").addEventListener("click", openVideo); else $("#openVideo").hidden = true;
+    if (get("brochures.infografia.imagen")) { $("#openInfo").addEventListener("click", openInfo); $("#openInfoThumb").addEventListener("click", openInfo); } else $("#infoCard").hidden = true;
     $("#bmcPreview").addEventListener("click", (e) => { if (!e.target.closest("#openCanvas")) openCanvas(1); });
     $("#viewerClose").addEventListener("click", closeViewer);
     $("#viewerTabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) showTab(+b.dataset.i); });

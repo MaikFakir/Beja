@@ -26,6 +26,9 @@ Ejemplos rápidos:
   - Cambiar precio / costos del Q* ..... precio.calculo  (la gráfica y la fórmula se recalculan solas)
   - Cambiar ciudades de la gráfica ..... demanda.ciudades
   - Cambiar el equipo ................... pie.equipo
+  - Enlace de la presentación Canva ..... hero.enlaceCanva
+  - Video de la portada ................. hero.video  (archivo en assets/video/)
+  - Infografía de brochures ............. brochures.infografia.imagen
 
 
 CAMBIAR EL RUT, LOS ESTATUTOS O UN BROCHURE
